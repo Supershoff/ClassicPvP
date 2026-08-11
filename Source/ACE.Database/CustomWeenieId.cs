@@ -28,6 +28,20 @@ namespace ACE.Database
 
         public const uint SkillAttrResetGem = 49090101;
 
+        // ── My Mule ──────────────────────────────────────────────────────────
+        // Reusable summon gem for the personal "mule" storage vendor.
+        public const uint Mule = 490400;
+
+        /// <summary>
+        /// Shared off-world Container weenie backing each player's persistent mule storage. A player
+        /// may own a chain of several of these (see PropertyInstanceId.MuleNextContainerId) once
+        /// their storage exceeds one container's 255-item capacity.
+        /// </summary>
+        public const uint MuleStorageContainer = 490408;
+
+        /// <summary>Shared Vendor weenie used as the ephemeral "My Mule" NPC shell.</summary>
+        public const uint MuleVendor = 490409;
+
         // ── Random Dungeon Bosses ─────────────────────────────────────────────
         // Universal boss roster that can replace a normal monster spawn in an
         // active Hot Dungeon or the Abandoned Mine (see DungeonBossManager).

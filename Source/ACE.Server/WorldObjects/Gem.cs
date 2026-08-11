@@ -175,9 +175,14 @@ namespace ACE.Server.WorldObjects
                 case CustomWeenieId.TinkeringTool:
                     player.UseTinkeringTool(this);
                     return;
+
+                case CustomWeenieId.Mule:
+                    player.SummonMule();
+                    return;
+
                 default:
                     break;
-            }            
+            }
 
             if (RareUsesTimer)
             {

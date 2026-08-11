@@ -65,7 +65,17 @@ namespace ACE.Server.Network.GameEvent.Events
                 // Work-around for the client not showing tinkering materials for sale on vendors: Temporarily change it's category to Misc.
                 var originalItemType = obj.ItemType;
                 bool isSalvage = originalItemType == ACE.Entity.Enum.ItemType.TinkeringMaterial;
-                if (isSalvage)
+
+                // My Mule: PromissoryNote (Trade Notes) always price at a fixed rate that ignores
+                // the vendor's own BuyPrice/SellPrice (see Vendor.GetSellCost/GetBuyCost's explicit
+                // PromissoryNote overrides) -- the client mirrors this locally when computing the
+                // price it displays/enforces, so a mule vendor (BuyPrice/SellPrice = 0, everything
+                // free) still shows a real price for trade notes specifically. Same category-swap
+                // trick as the salvage work-around above neutralizes it, gated to mule vendors only
+                // so real vendors keep their intended trade note pricing.
+                bool isMulePromissoryNote = vendor.MuleOwnerId.HasValue && originalItemType == ACE.Entity.Enum.ItemType.PromissoryNote;
+
+                if (isSalvage || isMulePromissoryNote)
                 {
                     obj.ItemType = ACE.Entity.Enum.ItemType.Misc;
                     obj.CalculateObjDesc(); // We have to calculate this or the icon will be wrong.
@@ -73,7 +83,7 @@ namespace ACE.Server.Network.GameEvent.Events
 
                 obj.SerializeGameDataOnly(Writer);
 
-                if(isSalvage)
+                if (isSalvage || isMulePromissoryNote)
                     obj.ItemType = originalItemType; // Rollback the ItemType
             });
 

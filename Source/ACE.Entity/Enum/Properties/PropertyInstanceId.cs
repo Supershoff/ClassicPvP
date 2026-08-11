@@ -78,6 +78,12 @@ namespace ACE.Entity.Enum.Properties
 
         /* ClassicPvP — kept above 10000 to avoid colliding with future ACE standard values */
         AllegianceForcedBreakMonarchId   = 20001,
-        AllegianceReswearMonarchId       = 20002
+        AllegianceReswearMonarchId       = 20002,
+
+        /* My Mule — stored on a mule storage container's own biota: GUID of the next container
+           in the overflow chain, if that container's 255-item capacity has ever been exceeded.
+           (The head container GUID itself is account-wide, not per-player -- see the shard DB
+           account_mule table / ShardDatabase.GetAccountMuleContainerId, not a property here.) */
+        MuleNextContainerId              = 20003
     }
 }
