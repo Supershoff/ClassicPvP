@@ -77,6 +77,23 @@ namespace ACE.Server.WorldObjects
         // unique items purchased from other players
         public Dictionary<ObjectGuid, WorldObject> UniqueItemsForSale = new Dictionary<ObjectGuid, WorldObject>();
 
+        /// <summary>
+        /// My Mule: when set, this Vendor is an ephemeral personal-storage shell owned by this player guid.
+        /// In-memory only, never persisted — a mule NPC never survives a landblock unload/server restart.
+        /// </summary>
+        public uint? MuleOwnerId;
+
+        /// <summary>
+        /// My Mule: the live off-world container chain backing this vendor's storage. Set alongside
+        /// MuleOwnerId. Living here (not just on the summoning player) is what lets a non-owner with
+        /// house storage access (see Player_Mule.CanAccessMuleStorage) deposit/withdraw too, since
+        /// they never summoned this vendor themselves.
+        /// </summary>
+        public List<Container> MuleContainers;
+
+        /// <summary>My Mule: the active /mule search filter for this vendor's buy window, if any.</summary>
+        public System.Text.RegularExpressions.Regex MuleSearchRegex;
+
         private bool inventoryloaded { get; set; }
 
         /// <summary>
@@ -191,8 +208,11 @@ namespace ACE.Server.WorldObjects
 
             var itemsForSale = new Dictionary<(uint weenieClassId, int paletteTemplate, double shade), uint>();
 
-            foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == DestinationType.Shop))
-                LoadInventoryItem(itemsForSale, item.WeenieClassId, item.Palette, item.Shade, item.StackSize);
+            if (Biota.PropertiesCreateList != null)
+            {
+                foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == DestinationType.Shop))
+                    LoadInventoryItem(itemsForSale, item.WeenieClassId, item.Palette, item.Shade, item.StackSize);
+            }
 
             //if (Biota.PropertiesGenerator != null && !PropertyManager.GetBool("vendor_shop_uses_generator").Item)
             //{
@@ -360,6 +380,16 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // My Mule: double-clicking the mule NPC to reopen it always clears an active
+            // /mule search filter (shared state on the vendor itself, so this applies for the
+            // owner and any guest with storage access alike) -- a stale filter never traps
+            // whoever's looking, the un-filtered listing is always one re-approach away.
+            if (MuleOwnerId.HasValue)
+            {
+                player.ClearMuleSearchFilter(this);
+                player.SendMuleCapacityStatus(this);
+            }
+
             var rotateTime = Rotate(player);    // vendor rotates towards player
 
             // TODO: remove this when DelayManager is not forward propagating current tick time
@@ -469,7 +499,11 @@ namespace ACE.Server.WorldObjects
 
             player.LastOpenedContainerId = Guid;
 
-            PrepareResetToHome();
+            // My Mule: a mule NPC has no meaningful "home" to reset to and no expiration --
+            // it only ever goes away when its owner leaves the landblock or dismisses it by
+            // reusing the gem (see Player_Mule.OnLeaveLandblock/SummonMule), never on a timer.
+            if (!MuleOwnerId.HasValue)
+                PrepareResetToHome();
         }
 
         public void DoVendorEmote(VendorType vendorType, WorldObject player)

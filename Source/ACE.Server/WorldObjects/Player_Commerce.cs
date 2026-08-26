@@ -41,6 +41,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (vendor.MuleOwnerId.HasValue)
+            {
+                HandleMuleWithdraw(vendor, items);
+                return;
+            }
+
             // if this succeeds, it automatically calls player.FinalizeBuyTransaction()
             vendor.BuyItems_ValidateTransaction(items, this);
 
@@ -147,6 +153,12 @@ namespace ACE.Server.WorldObjects
             if (vendor == null)
             {
                 SendUseDoneEvent(WeenieError.NoObject);
+                return;
+            }
+
+            if (vendor.MuleOwnerId.HasValue)
+            {
+                HandleMuleDeposit(vendor, itemProfiles);
                 return;
             }
 

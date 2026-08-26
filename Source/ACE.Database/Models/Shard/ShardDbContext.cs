@@ -100,6 +100,8 @@ public partial class ShardDbContext : DbContext
 
     public virtual DbSet<AccountSessionLog> AccountSessions { get; set; }
 
+    public virtual DbSet<AccountMule> AccountMule { get; set; }
+
     public virtual DbSet<CharacterLoginLog> CharacterLogins { get; set; }
 
     public virtual DbSet<PKKill> PKKills { get; set; }
@@ -1318,6 +1320,18 @@ public partial class ShardDbContext : DbContext
             entity.HasOne(d => d.House).WithMany(p => p.HousePermission)
                 .HasForeignKey(d => d.HouseId)
                 .HasConstraintName("biota_Id_house_Id");
+        });
+
+        modelBuilder.Entity<AccountMule>(entity =>
+        {
+            entity.HasKey(e => e.AccountId)
+                .HasName("PRIMARY");
+
+            entity.ToTable("account_mule");
+
+            entity.Property(e => e.AccountId).HasColumnName("account_Id");
+            entity.Property(e => e.ContainerId).HasColumnName("container_Id");
+            entity.Property(e => e.VisualVariant).HasColumnName("visual_Variant");
         });
 
         modelBuilder.Entity<AccountSessionLog>(entity =>

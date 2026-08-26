@@ -756,6 +756,90 @@ namespace ACE.Database
             return results;
         }
 
+        /// <summary>My Mule: the head container GUID of this account's shared mule storage chain, or null if no character on the account has ever summoned one.</summary>
+        public uint? GetAccountMuleContainerId(uint accountId)
+        {
+            using var context = new ShardDbContext();
+
+            var result = context.AccountMule.AsNoTracking().FirstOrDefault(r => r.AccountId == accountId);
+
+            return result != null && result.ContainerId != 0 ? result.ContainerId : (uint?)null;
+        }
+
+        /// <summary>My Mule: records the head container GUID for this account's shared mule storage chain. Set once, the first time any character on the account summons a mule.</summary>
+        public void SetAccountMuleContainerId(uint accountId, uint containerId)
+        {
+            using var context = new ShardDbContext();
+
+            var existing = context.AccountMule.FirstOrDefault(r => r.AccountId == accountId);
+
+            if (existing == null)
+                context.AccountMule.Add(new AccountMule { AccountId = accountId, ContainerId = containerId, VisualVariant = -1 });
+            else
+                existing.ContainerId = containerId;
+
+            context.SaveChanges();
+        }
+
+        /// <summary>My Mule: the sticky monster-race visual variant index shared by every character on this account, or null if not rolled yet.</summary>
+        public int? GetAccountMuleVisualVariant(uint accountId)
+        {
+            using var context = new ShardDbContext();
+
+            var result = context.AccountMule.AsNoTracking().FirstOrDefault(r => r.AccountId == accountId);
+
+            return result != null && result.VisualVariant >= 0 ? result.VisualVariant : (int?)null;
+        }
+
+        /// <summary>My Mule: records the sticky monster-race visual variant index for this account. Set once, the first time any character on the account summons a mule.</summary>
+        public void SetAccountMuleVisualVariant(uint accountId, int visualVariant)
+        {
+            using var context = new ShardDbContext();
+
+            var existing = context.AccountMule.FirstOrDefault(r => r.AccountId == accountId);
+
+            if (existing == null)
+                context.AccountMule.Add(new AccountMule { AccountId = accountId, ContainerId = 0, VisualVariant = visualVariant });
+            else
+                existing.VisualVariant = visualVariant;
+
+            context.SaveChanges();
+        }
+
+        /// <summary>
+        /// My Mule: whether requestingPlayerGuid currently has storage-chest access to any house
+        /// owned by any character on the same account as muleOwnerGuid (mule storage is
+        /// account-wide, so access shouldn't depend on which of the owner's characters happens to
+        /// own the house or summoned the mule). Queries the DB directly rather than going through
+        /// HouseManager.FindPlayerHouse -- that returns a House object loaded once into the rent
+        /// queue at server startup (or house purchase) and never refreshed afterward, so it goes
+        /// stale the moment an owner grants/revokes a guest's storage access through the live
+        /// in-game house panel. This needs to see current data, not a startup-time snapshot.
+        /// </summary>
+        public bool HasHouseStoragePermission(uint muleOwnerGuid, uint requestingPlayerGuid)
+        {
+            using var context = new ShardDbContext();
+
+            var ownerAccountId = context.Character
+                .Where(c => c.Id == muleOwnerGuid)
+                .Select(c => (uint?)c.AccountId)
+                .FirstOrDefault();
+
+            if (!ownerAccountId.HasValue)
+                return false;
+
+            var accountCharacterGuids = context.Character
+                .Where(c => c.AccountId == ownerAccountId.Value)
+                .Select(c => c.Id);
+
+            var ownedHouseIds = context.BiotaPropertiesIID
+                .Where(iid => iid.Type == (ushort)PropertyInstanceId.HouseOwner && accountCharacterGuids.Contains(iid.Value))
+                .Select(iid => iid.ObjectId);
+
+            return context.HousePermission
+                .Any(hp => hp.PlayerGuid == requestingPlayerGuid && hp.Storage && ownedHouseIds.Contains(hp.HouseId));
+        }
+
         public Character GetCharacterStubByName(string name) // When searching by name, only non-deleted characters matter
         {
             var context = new ShardDbContext();

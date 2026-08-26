@@ -1229,6 +1229,8 @@ namespace ACE.Server.WorldObjects
 
         public override void OnLeaveLandblock(Landblock landblock)
         {
+            if (ActiveMule != null)
+                DespawnMule();
         }
 
         public const float RunFactor = 1.5f;

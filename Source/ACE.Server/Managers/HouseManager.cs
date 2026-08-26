@@ -756,7 +756,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the house in the rent queue for a player guid, if exists
         /// </summary>
-        private static PlayerHouse FindPlayerHouse(uint playerGuid)
+        public static PlayerHouse FindPlayerHouse(uint playerGuid)
         {
             return RentQueue.FirstOrDefault(i => i.PlayerGuid == playerGuid);
         }
