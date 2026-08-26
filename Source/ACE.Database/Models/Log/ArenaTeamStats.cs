@@ -24,13 +24,13 @@ namespace ACE.Database.Models.Log
         public string TeamName => $"{CharacterNameA} & {CharacterNameB}";
 
         /// <summary>
-        /// Raw team ELO.  ELO decay is applied daily by the background job and
-        /// persisted here, so the stored value is always the current effective rating.
+        /// Raw team ELO, and the team's leaderboard score.  Team ratings are
+        /// exempt from the daily decay job.
         /// </summary>
         public uint Elo { get; set; }
 
         /// <summary>
-        /// Composite score snapshot as of the last match or last decay run.
+        /// Score snapshot mirroring <see cref="Elo"/> as of the last match.
         /// Useful for raw DB queries; authoritative ranking uses CompositeScore.
         /// </summary>
         public uint RankPoints { get; set; }
@@ -43,7 +43,8 @@ namespace ACE.Database.Models.Log
 
         /// <summary>
         /// Number of matches where both team members survived (were not eliminated)
-        /// as part of the winning result.
+        /// as part of the winning result.  Tracked as a stat only — it does not
+        /// affect the team's leaderboard score.
         /// </summary>
         public uint TotalSurvived { get; set; }
 
@@ -53,8 +54,8 @@ namespace ACE.Database.Models.Log
         public DateTime? LastMatchDatetime { get; set; }
 
         /// <summary>
-        /// Timestamp of the last time ELO decay was written to the database for this team.
-        /// Null means no decay has been applied since the most recent match.
+        /// Unused — teams are exempt from ELO decay.  Retained so the existing
+        /// column keeps mapping cleanly.
         /// </summary>
         public DateTime? LastDecayDatetime { get; set; }
 

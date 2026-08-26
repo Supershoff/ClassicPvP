@@ -261,7 +261,12 @@ namespace ACE.Server.WorldObjects
                     hometownMultiplier = 1.0 + hometownCount * 0.05;
             }
 
-            var m_amount = (long)Math.Round(amount * enchantment * modifier * hometownMultiplier);
+            // Catch-up boost: characters whose lifetime total XP is well below the current season
+            // XP cap earn multiplied XP, scaled by how far behind the cap they are. Returns 1.0
+            // when disabled, when no season cap is active, or once the player has caught up.
+            var catchUpMultiplier = RollingLevelCapManager.GetCatchUpXpMultiplier(TotalExperience ?? 0);
+
+            var m_amount = (long)Math.Round(amount * enchantment * modifier * hometownMultiplier * catchUpMultiplier);
 
             var m_amount_before_extra = m_amount;
 
@@ -360,7 +365,10 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of XP to grant to the player</param>
         /// <param name="xpType">The source of the XP being granted</param>
         /// <param name="shareable">If TRUE, this XP can be shared with fellowship members</param>
-        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All, string xpMessage = "", long extraNotSharedAmount = 0, string sourceString = "", bool applyPkSizeNerf = true)
+        /// <param name="bypassXpCap">If TRUE, ignores the Infiltration rolling season XP cap, the
+        /// season_max_xp safety clamp, and the max-level XP gate. Admin/testing use only — set by
+        /// the "force" argument to /grantxp.</param>
+        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All, string xpMessage = "", long extraNotSharedAmount = 0, string sourceString = "", bool applyPkSizeNerf = true, bool bypassXpCap = false)
         {
             if (GameplayMode == GameplayModes.Limbo)
             {
@@ -408,7 +416,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Make sure UpdateXpAndLevel is done on this players thread
-            EnqueueAction(new ActionEventDelegate(() => UpdateXpAndLevel(amount + extraNotSharedAmount, xpType, xpMessage, sourceString)));
+            EnqueueAction(new ActionEventDelegate(() => UpdateXpAndLevel(amount + extraNotSharedAmount, xpType, xpMessage, sourceString, bypassXpCap)));
 
             //Update XP tracking info
             try
@@ -456,7 +464,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Adds XP to a player's total XP, handles triggers (vitae, level up)
         /// </summary>
-        private void UpdateXpAndLevel(long amount, XpType xpType, string xpMessage = "", string sourceString = "")
+        private void UpdateXpAndLevel(long amount, XpType xpType, string xpMessage = "", string sourceString = "", bool bypassXpCap = false)
         {
             // until we are max level we must make sure that we send
             var xpTable = DatManager.PortalDat.XpTable;
@@ -469,8 +477,10 @@ namespace ACE.Server.WorldObjects
             // Rolling XP cap: in Infiltration the entire world has a server-wide XP ceiling that
             // increases daily.  The cap is stored as a raw total-XP value so it can extend past
             // level 126 into the post-level-cap skill/attribute grind phase.
+            // bypassXpCap (admin "/grantxp <amount> force") leaves rollingCapXp at 0 so none of the
+            // per-category or global cap accounting below runs, and clears the season_max_xp clamp.
             long rollingCapXp = 0;
-            if (Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.Infiltration)
+            if (!bypassXpCap && Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.Infiltration)
                 rollingCapXp = RollingLevelCapManager.GetCurrentXpCap();
 
             // totalXpCap is only used for the safety clamp on the non-rolling-cap path.
@@ -479,7 +489,7 @@ namespace ACE.Server.WorldObjects
                 ? Math.Max((long)maxLevelXp, PropertyManager.GetLong("season_max_xp").Item)
                 : long.MaxValue;
 
-            var totalXpCap = Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.Infiltration
+            var totalXpCap = Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.Infiltration && !bypassXpCap
                 ? (rollingCapXp > 0 ? rollingCapXp : seasonMaxXp)
                 : long.MaxValue;
             var availableXpCap = Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.Infiltration ? uint.MaxValue : long.MaxValue; // Max unassigned xp amount.
@@ -498,12 +508,12 @@ namespace ACE.Server.WorldObjects
                 amount = xpLeft;
             }
 
-            if (Level != maxLevel || allowXpAtMaxLevel)
+            if (Level != maxLevel || allowXpAtMaxLevel || bypassXpCap)
             {
                 var addAmount = amount;
 
                 var amountLeftToEnd = (long)maxLevelXp - TotalExperience ?? 0;
-                if (!allowXpAtMaxLevel && amount > amountLeftToEnd)
+                if (!allowXpAtMaxLevel && !bypassXpCap && amount > amountLeftToEnd)
                     addAmount = amountLeftToEnd;
 
                 // Rolling level cap: per-category hard stop matching Doctide Seasons behavior.

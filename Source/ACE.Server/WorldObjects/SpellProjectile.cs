@@ -458,12 +458,21 @@ namespace ACE.Server.WorldObjects
             var targetPlayer = target as Player;
             var isPvP = sourcePlayer != null && targetPlayer != null;
 
+            // When the target is standing in an arena landblock, the pvp_dmg_mod_* lookups below
+            // resolve to the pvp_dmg_mod_arena_* set instead — the two sets never stack. Landblock
+            // only: no arena event needs to be running and event membership is not checked.
+            var isArenaLandblock = targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock);
+
+            // ArenaTestTarget redirects only the damage config lookups (see Player.ArenaTestTarget);
+            // arena event gating below deliberately stays on isArenaLandblock.
+            var isArena = isArenaLandblock || (targetPlayer != null && targetPlayer.ArenaTestTarget);
+
             if (sourcePlayer != null && sourcePlayer.IsArenaObserver)
                 return null;
 
             //Arenas - If this is an arena landblock
             //don't allow any dmg except while the event is in a started status (Status == 4)
-            if (targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
+            if (isArenaLandblock)
             {
                 var arenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
                 if (arenaEvent == null || arenaEvent.Status != 4)
@@ -738,13 +747,13 @@ namespace ACE.Server.WorldObjects
                         var spellType = GetProjectileSpellType(Spell.Id);
                         if (Spell.School == MagicSchool.WarMagic && (spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
                         {
-                            var warVarianceMod = PropertyManager.GetDouble("pvp_dmg_mod_war_variance").Item;
+                            var warVarianceMod = isArena ? PropertyManager.GetDouble("pvp_dmg_mod_arena_war_variance").Item : PropertyManager.GetDouble("pvp_dmg_mod_war_variance").Item;
                             var modifiedVariance = Convert.ToInt32(Math.Round(Spell.Variance * warVarianceMod));
                             minDmg = Spell.MaxDamage - modifiedVariance;
                         }
                         else if (Spell.DamageType == DamageType.Nether && (spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
                         {
-                            var voidVarianceMod = PropertyManager.GetDouble("pvp_dmg_mod_void_variance").Item;
+                            var voidVarianceMod = isArena ? PropertyManager.GetDouble("pvp_dmg_mod_arena_void_variance").Item : PropertyManager.GetDouble("pvp_dmg_mod_void_variance").Item;
                             var modifiedVariance = Convert.ToInt32(Math.Round(Spell.Variance * voidVarianceMod));
                             minDmg = Spell.MaxDamage - modifiedVariance;
                         }
@@ -810,65 +819,55 @@ namespace ACE.Server.WorldObjects
                     float dmgMod = 1.0f;
                     if (Spell.School == MagicSchool.WarMagic)
                     {
-                        dmgMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_war").Item;
+                        dmgMod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war").Item;
 
                         if (SpellType == ProjectileSpellType.Streak)
-                            dmgMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_war_streak").Item;
+                            dmgMod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_streak").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_streak").Item;
 
                         if (SpellType == ProjectileSpellType.Blast)
-                            dmgMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_war_blast").Item;
+                            dmgMod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_blast").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_blast").Item;
 
                         if (criticalHit && weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
-                            dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cb_crit").Item;
+                            dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cb_crit").Item;
 
                         if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
                         {
-                            dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cs_dmg").Item;
+                            dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_cs_dmg").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cs_dmg").Item;
                             if (criticalHit)
-                                dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cs_crit").Item;
+                                dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_cs_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_cs_crit").Item;
                         }
 
                         // Weeping (Human Slayer) caster
                         if (weapon != null && weapon.IsWeepingWeapon)
-                            dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_war_weeping").Item;
+                            dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_war_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_war_weeping").Item;
 
                         finalDamage = finalDamage * dmgMod;
                     }
                     else if (Spell.DamageType == DamageType.Nether)
                     {
-                        dmgMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_void").Item;
+                        dmgMod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void").Item;
 
                         if (SpellType == ProjectileSpellType.Streak)
-                            dmgMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_void_streak").Item;
+                            dmgMod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void_streak").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void_streak").Item;
 
                         if (criticalHit)
                         {
-                            dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_void_crit").Item;
+                            dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void_crit").Item;
                             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
-                                dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_void_cb_crit").Item;
+                                dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void_cb_crit").Item;
                         }
 
                         // Weeping (Human Slayer) caster
                         if (weapon != null && weapon.IsWeepingWeapon)
-                            dmgMod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_void_weeping").Item;
+                            dmgMod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void_weeping").Item;
 
                         finalDamage = finalDamage * dmgMod;
-                    }
-
-                    // arena 1v1 global damage modifier
-                    if (ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
-                    {
-                        var arenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
-                        if (arenaEvent != null && arenaEvent.EventType != null && arenaEvent.EventType.Equals("1v1", StringComparison.OrdinalIgnoreCase))
-                        {
-                            finalDamage = finalDamage * (float)PropertyManager.GetDouble("arena_1v1_global_dmg_mod").Item;
-                        }
                     }
                 }
             }
 
             //Arenas - If this is an arena landblock, track dmg dealt and received
-            if (targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
+            if (isArenaLandblock)
             {
                 var arenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
                 if (arenaEvent != null && arenaEvent.Status == 4 && sourcePlayer != null)

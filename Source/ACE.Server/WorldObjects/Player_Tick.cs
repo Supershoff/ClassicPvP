@@ -579,8 +579,15 @@ namespace ACE.Server.WorldObjects
         /// https://youtu.be/o5lp7hWhtWQ?t=112
         /// 
         /// If you wish for players to glitch around less during powerslides, lower this value
+        ///
+        /// MISSILE FIX 5: this also governs how far the server's authoritative position for a moving
+        /// player can drift from what other clients are showing. Between broadcasts, each client
+        /// dead-reckons other players from their MoveToState, so a missile aimed at the server position
+        /// can visibly fly at empty space on the shooter's screen even when the intercept math was
+        /// self-consistent. Now driven by the 'player_update_position_threshold' server property so it
+        /// can be tuned live (0.2 - 0.33 tightens pvp sync, at a bandwidth cost). Default stays 1.0.
         /// </summary>
-        public static TimeSpan MoveToState_UpdatePosition_Threshold = TimeSpan.FromSeconds(1);
+        public static TimeSpan MoveToState_UpdatePosition_Threshold => TimeSpan.FromSeconds(PropertyManager.GetDouble("player_update_position_threshold").Item);
 
         bool LastMoveToStateWasRun = false;
         bool IsFirstAutoPosPacketSinceMoveToState = false;
@@ -1068,11 +1075,21 @@ namespace ACE.Server.WorldObjects
                         if (HasPerformedActionsSinceLastMovementUpdate && !IsJumping)
                             HasPerformedActionsSinceLastMovementUpdate = false; // Delay disabling this until we're done with the jump.
 
+                        // Never advance SnapPos onto a tick where a hard barrier — a closed door or a
+                        // wall — was clipped this transition.  The door and geometry checks run LATER in
+                        // this block and roll back TO SnapPos; if SnapPos were allowed to advance onto the
+                        // far side of a barrier first (e.g. the grounded landing packet of a jump through
+                        // a client-side-deleted door), the rollback target would itself be past the
+                        // barrier and the "rubber-band" would leave the player through it.  Freezing
+                        // SnapPos here keeps the rollback anchored on the last barrier-free position.
+                        bool _barrierClipThisTick = PhysicsObj.LastTransitionHitClosedDoor
+                                                 || PhysicsObj.LastTransitionHitGeometry;
+
                         // Primary SnapPos advance: grounded and not jumping — most precise.
                         // Use newPosition (the packet we just accepted) rather than Location (the previous
                         // packet's position).  Location isn't updated to newPosition until line 1485, so using
                         // Location here would leave SnapPos one step behind, causing rollbacks to overshoot.
-                        if (!IsJumping && PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable))
+                        if (!_barrierClipThisTick && !IsJumping && PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable))
                         {
                             SnapPos = new ACE.Entity.Position(newPosition);
                             LastSnapPosAdvanceTime = currentTime;
@@ -1080,7 +1097,7 @@ namespace ACE.Server.WorldObjects
                         // Fallback SnapPos advance: player has had no violations and hasn't been updated
                         // in over 2 seconds (e.g. sliding, stair-climbing, brief air time on terrain).
                         // Keeps the rollback target fresh so any rubber-band is imperceptible.
-                        else if (MovementEnforcementCounter == 0 && currentTime - LastSnapPosAdvanceTime > 2.0)
+                        else if (!_barrierClipThisTick && MovementEnforcementCounter == 0 && currentTime - LastSnapPosAdvanceTime > 2.0)
                         {
                             SnapPos = new ACE.Entity.Position(newPosition);
                             LastSnapPosAdvanceTime = currentTime;

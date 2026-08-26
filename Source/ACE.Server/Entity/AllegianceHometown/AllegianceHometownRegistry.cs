@@ -10,26 +10,60 @@ namespace ACE.Server.Entity.AllegianceHometown
     /// </summary>
     public static class AllegianceHometownRegistry
     {
+        /// <summary>
+        /// Meeting halls occupy their own dedicated dungeon landblocks, numbered in the same order as
+        /// the town table below: Al-Arqas (TownId 1) is 0x011D through Zaikhal (TownId 25) is 0x0135.
+        /// Verified against the entry portals (wcids 6088-6112), each of which is placed on its town's
+        /// landblock and lands in the matching hall.
+        /// </summary>
+        private const uint HallLandblockBase = 0x011Cu;
+
+        // All 25 hall interiors are structurally identical - same cells, same object origins, only the
+        // exit portal wcid differs - so one cell offset and one position serve every town.
+        //
+        // Centre of the refreshing pool on the hall's main floor, taken from Holtburg (TownId 9):
+        //   0x01250104 [9.895210 -30.003195 0.005000] 0.709234 0.000000 0.000000 -0.704974
+        // Note @loc prints the quaternion as W X Y Z while the Position ctor takes X Y Z W.
+        private const uint  Phase2CellOffset = 0x0104u;
+        private const float Phase2X = 9.895210f;
+        private const float Phase2Y = -30.003195f;
+        private const float Phase2Z = 0.005000f;
+        private const float Phase2RotationX = 0f;
+        private const float Phase2RotationY = 0f;
+        private const float Phase2RotationZ = -0.704974f;
+        private const float Phase2RotationW = 0.709234f;
+
         public class TownEntry
         {
             public byte   TownId        { get; }
             public string TownName      { get; }
+            /// <summary>Outdoor town landblock. Phase 0 (idle) and Phase 1 run here.</summary>
             public uint   LandblockId   { get; }   // upper 16 bits of obj_cell_id
+            /// <summary>Indoor meeting hall landblock. Phase 2 runs here.</summary>
+            public uint   HallLandblockId { get; }
             public uint   BindstoneWcid { get; }
+            /// <summary>The real outdoor bind stone. Phase 1 proximity is measured from this.</summary>
             public Position BindstonePosition { get; }
+            /// <summary>Where the Phase 2 bind stone proxy spawns inside the meeting hall.</summary>
+            public Position Phase2Position    { get; }
 
             public TownEntry(byte townId, string townName, uint objCellId, float x, float y, float z)
             {
                 TownId           = townId;
                 TownName         = townName;
                 LandblockId      = objCellId >> 16;
+                HallLandblockId  = HallLandblockBase + townId;
                 BindstoneWcid    = 27547;
                 BindstonePosition = new Position(objCellId, x, y, z, 0f, 0f, 0f, 1f);
+                Phase2Position    = new Position((HallLandblockId << 16) | Phase2CellOffset,
+                                                 Phase2X, Phase2Y, Phase2Z,
+                                                 Phase2RotationX, Phase2RotationY, Phase2RotationZ, Phase2RotationW);
             }
         }
 
         private static readonly Dictionary<byte, TownEntry> _byId   = new Dictionary<byte, TownEntry>();
         private static readonly Dictionary<uint, TownEntry> _byLandblock = new Dictionary<uint, TownEntry>();
+        private static readonly Dictionary<uint, TownEntry> _byHallLandblock = new Dictionary<uint, TownEntry>();
 
         static AllegianceHometownRegistry()
         {
@@ -66,6 +100,7 @@ namespace ACE.Server.Entity.AllegianceHometown
             {
                 _byId[t.TownId]         = t;
                 _byLandblock[t.LandblockId] = t;
+                _byHallLandblock[t.HallLandblockId] = t;
             }
         }
 
@@ -83,6 +118,15 @@ namespace ACE.Server.Entity.AllegianceHometown
             return t;
         }
 
+        /// <summary>Resolves a meeting hall landblock back to its town. Phase 2 lookups use this.</summary>
+        public static TownEntry GetByHallLandblock(uint landblockId)
+        {
+            _byHallLandblock.TryGetValue(landblockId, out var t);
+            return t;
+        }
+
         public static bool IsTownLandblock(uint landblockId) => _byLandblock.ContainsKey(landblockId);
+
+        public static bool IsHallLandblock(uint landblockId) => _byHallLandblock.ContainsKey(landblockId);
     }
 }

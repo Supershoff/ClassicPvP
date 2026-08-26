@@ -9,13 +9,13 @@ VALUES (480610,   1,       2048) /* ItemType - Gem */
      , (480610,  11,          1) /* MaxStackSize */
      , (480610,  12,          1) /* StackSize */
      , (480610,  13,         10) /* StackUnitEncumbrance */
-	 , (480610,  15,        100) /* StackUnitValue - costs 100 PK Trophies at Anti Parazi */
+	 , (480610,  15,        35) /* StackUnitValue - costs PK Trophies at Anti Parazi */
      , (480610,  16,     524296) /* ItemUseable - SourceContainedTargetContained */
      , (480610,  18,          1) /* UiEffects - Magical */
-     , (480610,  19,        100) /* Value - costs 100 PK Trophies at Anti Parazi */
+     , (480610,  19,        35) /* Value - costs PK Trophies at Anti Parazi */
      , (480610,  65,        101) /* Placement - Resting */
      , (480610,  93,       1044) /* PhysicsState - Ethereal, IgnoreCollisions, Gravity */
-     , (480610,  94,          33025) /* TargetType - Vestements */;
+     , (480610,  94,          35215) /* TargetType - Vestements */;
 
 INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (480610,   1, False) /* Stuck */

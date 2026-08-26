@@ -7,7 +7,313 @@
 
 ---
 
-## 🩹 v1.16 (in development)
+## 🩹 v1.21 (in development)
+
+---
+
+## 🩹 v1.20 — August 23, 2026
+
+### 🏹 Missile Tracking — Experimental Changes, Off By Default
+
+Missile tracking for bows, crossbows and thrown weapons has been a long-standing complaint: arrows that visibly fly nowhere near the target, and twitching side to side throwing off tracking far more than it should.
+
+Digging into it turned up several genuine issues in how the server aims a projectile — the firing solution being calculated *before* the aim animation plays rather than at the moment the arrow leaves the bow, target leading silently switching itself off at longer ranges, and the aim point for high attacks sitting right on the edge of the target's hit volume instead of in the middle of it. A separate issue affects how often your client is told where other players actually are, which is why an arrow can look like it missed when the server thought it connected.
+
+**None of it is live yet.** Every change is behind its own switch and **the original behavior remains the default**. They will be enabled one at a time on the test server so each can be measured in isolation — the whole point is to be able to tell which change did what, and to catch any side effect before it reaches live PvP.
+
+Nothing about missile combat changes for you today. Expect these to start appearing in later patch notes as they are individually turned on, with details of what each one actually did.
+
+### 🐛 Fixed: Pack Dolls Never Rotting Off The Ground
+
+Anything you drop on the ground is supposed to clean itself up after about five minutes. A handful of items never did — pack dolls, plush toys, the Carved Tusker Statue, the Small Olthoi Grub, the Wedding Cake. Their item data carried a **never rot** flag inherited from retail, so the server skipped right past them when sweeping the landblock.
+
+On its own that's a curiosity. Dropped by the thousand in one spot it's a lag bomb — every pack doll runs full creature animations, and a dense pile of them will drag the framerate down for everyone in the area, which is exactly what was happening.
+
+**All 23 affected items now rot on the normal timer**, and the piles already sitting on the ground have been cleared out.
+
+---
+
+## 🩹 v1.19 — August 22, 2026
+
+### 🏰 Hometown Phase 2 Moves Indoors — Into the Meeting Halls
+
+Phase 2 used to be fought in the open, on top of the town's Bind Stone. Whoever brought the bigger pile of bodies to an open field usually won, and the fight sprawled across a hundred meters of terrain.
+
+**Phase 2 now happens inside the town's Meeting Hall.**
+
+When Phase 1 completes, the outdoor Bind Stone goes dark and the fight moves indoors. Take the Meeting Hall portal — that's where the attackable Bind Stone appears, and it's the only way in.
+
+- **The Meeting Hall portal ignores the PK timer while Phase 2 is running.** Neither side can be locked out of a siege by being tagged on repeat. Outside of Phase 2 the normal timer applies, so the halls are not a general escape hatch from PvP.
+- **Every distance rule became a presence rule.** Holding the hall, blocking a repel, earning participation trophies, qualifying for rewards, getting smited on a loss, and the bonus damage from kills — all of it is now simply "are you in the hall". No more counting meters.
+- **Damage falloff still works on distance.** Full damage within **15 meters** of the stone, nothing past **20**. The hall entrance sits about **36 meters** from the Bind Stone, so attackers have to push most of the way in before they can land anything. Walking through the portal is not the same as being in the fight.
+- **Kills only count inside the hall.** A kill on a defender still knocks **5% max HP** off the Bind Stone, and a kill on an attacker still heals it by the same — but only if it happens in the hall. Fighting out in the town proper is ordinary PvP now.
+
+### 👥 Meeting Halls Are Zerg Controlled — 7 Per Allegiance
+
+A Meeting Hall is a small dungeon with a single entrance, which makes it very easy to simply wall off with numbers.
+
+Every Meeting Hall is now a **permanently zerg-controlled area, capped at 7 players per allegiance** — whether or not a siege is running. An 8th member who portals in is bounced straight back to their lifestone, and if an allegiance somehow ends up over the cap anyway, the most recently teleported players are sent home until it's back to 7.
+
+Each hall has its **own independent cap**. Holding Holtburg's hall doesn't cost you any of your allowance in Arwic.
+
+### 🎯 Hometown Phase 1 — Much Tighter Contest Range
+
+Phase 1 used to sweep **50 meters** for enemies. In practice that covered most of a town square: anyone drifting through the area could stall an assault without ever committing to the fight, and a rival allegiance idling well away from the stone could block one from starting at all.
+
+**That detection range is now 10 meters.** To contest a Phase 1 you have to actually stand on the Bind Stone with the attackers, not hover at the edge of radar.
+
+The rest is unchanged — you still need **2+ members within 5 meters** to make progress, an enemy still has to hold the area for **30 continuous seconds** to reset it, and you still need **4 uninterrupted minutes** to reach Phase 2.
+
+### 🐛 Fixed: Captures Ending "Inconclusively"
+
+Destroying a Bind Stone could end the siege with **"The assault has ended inconclusively"** instead of awarding the capture — no town, no rewards, nothing for either side.
+
+The resolution smites the losing allegiance, and that smite crashed on any defender who had actually been fought during the siege. Since the crash happened partway through the payout, it took the whole result down with it. The same bug also broke the admin `@smite` command.
+
+Fixed, and the payout is now hardened: one player failing to be rewarded or smited no longer costs everyone else their rewards or voids a decided outcome.
+
+---
+
+## 🩹 v1.18 — August 22, 2026
+
+### 🔄 Combat Skill Respecs — 3 Gems Every 7 Days
+
+Respeccing a combat skill used to mean **one gem every 14 days**, shared with every other skill and sitting on the same timer. Want to unspec Sword and spec Axe? That's two gems to unspec and untrain Sword and another to spec Axe, quite a long wait.
+
+Combat skills now have **their own timer: 3 gems every 7 days.**
+
+The pool of 3 is shared across **Enlightenment and Forgetfulness** and across **every combat skill** — Axe, Bow, Crossbow, Dagger, Mace, Spear, Staff, Sword, Thrown Weapon, Unarmed Combat, War Magic and **Life Magic**. Spend them however you want: three unspecs, three specs, or any mix. That Sword-to-Axe swap is now possible within a single 7 day quest timer.
+
+**The clock starts on your first gem, not your last.** Grab one on Monday and you have until the following Monday for the other two, whenever suits you. When the week is up the allowance goes back to 3. If you reach for a fourth early, the game tells you exactly how long is left.
+
+**Everything else is unchanged and now on a separate timer.** Non-combat skills and attribute gems stay at one pickup every 14 days — and because they're separate, spending your combat gems no longer blocks an attribute transfer, or the other way around.
+
+The **Skill and Attribute Reset Gem** from Darkbeat still wipes the lot in one go, combat timer included.
+
+### 🔥 Hot Dungeons — Better Loot, Less Junk
+
+Loot rolled inside an active **Hot Dungeon** is now weighted toward the gear people actually keep.
+
+**More high-end weapons.** Weapons that drop in a Hot Dungeon have a small chance to come out at the **best damage and damage variance available for their wield requirement**. This does not change what wield requirement a weapon rolls — a 250 wield weapon is still a 250 wield weapon, it just has a shot at being the best possible version of one. It's a rare roll by design, not something you'll see every trip.
+
+This applies to **every weapon type** — melee weapons, thrown, **bows, crossbows and atlatls**, and **casters including wands, orbs and sceptres**.
+
+**More single-slot armor.** Armor drops now lean toward **single-slot pieces** — helms, breastplates, girths, gauntlets, pauldrons, tassets, bracers and sollerets — instead of multi-slot pieces like coats, cuirasses, shirts, sleeves, leggings and boots. Shields are in the favored group too.
+
+**Less junk.** Weapons also turn up more often in place of low-value filler, and most of the mundane clutter — spell components, lockpicks, healing kits — is replaced with real equipment instead. **Corpses don't carry fewer items**, they just carry a better mix.
+
+All of it is tunable, so expect the exact rates to get adjusted as we watch it land.
+
+### 🛡️ Impenetrability Morph Gems — Reworked, Plus a New Lesser Version
+
+The **Impenetrability Morph Gem** was close to a lottery ticket: a **3%** shot at Major Impenetrability and a **97%** consolation Minor. Most people burned one and walked away with the Minor.
+
+That gem now rolls **33% Major / 67% Minor**. Everything else about it is unchanged — it's still one shot per piece, and it still refuses to apply to armor that already has *any* Impenetrability cantrip on it.
+
+The old odds didn't disappear. They moved to a new item.
+
+The **Lesser Impenetrability Morph Gem** keeps the original **3% Major / 97% Minor** roll, but with a twist that makes it worth grinding: **you can use it on the same piece over and over.**
+
+- On armor with **no Impenetrability**, it adds Minor (97%) or Major (3%).
+- On armor that already has **Minor Impenetrability**, you're rolling that same **3%** to *upgrade* it to **Major**. Miss the roll and the gem is spent — nothing comes off the armor, but you're out a gem.
+- On armor that already has **Major** (or Epic, Legendary, or Prodigal), the gem won't apply and says so.
+
+So the Mythic-box gem is now a clean one-in-three shot, and the Lesser gem is a slow grind to the same place.
+
+Both gems still only apply to loot-generated or rare armor and underclothes that already carry magic.
+
+While we were in there, the misspelled **"Impenatrability"** on the original gem was fixed. Same item — it just reads correctly now.
+
+### 🎁 Where to Get the Lesser Gem
+
+The **Lesser Impenetrability Morph Gem** turns up in two places:
+
+- **Rare Mystery Box** — a new prize slot at **5.3%**. Adding it nudged every other slot down a hair: the 5.6% prizes are now **5.3%**, salvage bags went **3.7% → 3.5%**, and the Slayer / Creature Resistance gems **1.9% → 1.8%**. Nothing was removed from the box.
+- **Darkbeat** — **30 Phials of Bloody Tears**.
+
+The full-strength Impenetrability Morph Gem still comes from the **Mythic Mystery Box** and nowhere else.
+
+### 💰 Slayer and Creature Resistance Morph Gems — Much Cheaper
+
+Both sat at **100 PK Trophies** at **Anti Parazi**, which almost nobody was paying.
+
+- **Slayer Morph Gem** → **35 PK Trophies**
+- **Creature Resistance Morph Gem** → **25 PK Trophies**
+
+### 🏹 Fetish of the Dark Idols — Now Sold by Darkbeat
+
+**Darkbeat** now carries the **Fetish of the Dark Idols** for **25 Phials of Bloody Tears**.
+
+Combine it with any loot-generated atlatl, bow, or crossbow to add a **Magic Absorbing** property at the cost of a **Melee Defense** penalty. The weapon can be imbued *before* the Fetish goes on but not after; non-imbue tinkers work either way.
+
+### 🕵️ No More Peeking at Your Matchup — or Ducking It
+
+You no longer see who you've been matched against until the match actually starts.
+
+Players were queueing, getting matched, immediately running `/arena info` to see the draw, and — if it looked rough — logging off or PK-tagging themselves by attacking someone. That cancels the match before it starts, which meant **no disqualification and no penalty**. Free re-roll on your opponent.
+
+From matchmaking through the teleport-in countdown, `/arena info` now shows only a player count for a pending match, and pending matches can't be watched with `/arena watch` either. Names appear the moment the match begins, and everything after that — the match-started global, the results, the leaderboards — is unchanged.
+
+### 🏆 Arena Ranking — Your Score Is Now Just Your ELO
+
+The 1v1 and 2v2 leaderboards no longer add **wins** and **matches played** on top of your rating. **Your score is your ELO, full stop.** The 2v2 survival bonus is gone from scoring too. All three are still tracked and still shown in `/arena stats` — they just don't inflate your rank anymore.
+
+**Nobody's ELO changed.** Your rating is exactly what it was; only the way the leaderboard reads it has changed. In practice that means players who had climbed on volume rather than rating will drop, and a high-rated player who queues less will no longer be buried under grinders.
+
+Staying active is now enforced by decay instead, which is the part that actually got teeth.
+
+### 📉 ELO Decay Now Scales With How Much You've Played
+
+Decay used to be a flat **3% per day of your whole rating** after three quiet days. It's now tied to **how many matches you've played in the last 7 days**, checked once a day, and it only eats the part of your rating **above 1500**.
+
+**1v1:**
+
+| Matches in the last 7 days | Daily decay |
+|---|---|
+| None at all | **5%** |
+| 1 – 2 | **3%** |
+| 3 – 9 | **1%** |
+| 10 or more | **none** |
+
+**2v2** is gentler, since it needs a partner online:
+
+| Matches in the last 7 days | Daily decay |
+|---|---|
+| None at all | **3%** |
+| 1 – 2 | **1%** |
+| 3 or more | **none** |
+
+The "above 1500" part matters: at **1800 ELO** with no matches all week, the 5% comes off the **300 points above baseline** — you lose **15**, not 90. And no amount of decay can drop you below 1500.
+
+Only matches in the **same format** count toward that format's tier — a week of 2v2 does nothing for your 1v1 decay, and vice versa.
+
+**2v2 team pairs no longer decay at all.** Your rating as a specific duo now stands until you play as that duo again.
+
+### 👹 Rendmaw Hits a Little Softer
+
+**Rendmaw**'s melee damage has been dialed back by **10%**. He was landing harder than any other Dungeon Boss by a wide margin, to the point where a bad swing could end a fight outright. He's still the heaviest hitter of the five — just not by as much.
+
+---
+
+## 🩹 v1.17 — August 13, 2026
+
+### 🩸 Heads Up: Drain Health Coming to 1v1 Arenas
+
+The infrastructure is in place to tune how effective **drain health spells** are inside **1v1 arena** matches. It's a no-op for now — drains work exactly as they always have — but expect a **nerf to drain health effectiveness in arenas** once testing settles on a value.
+
+### 👹 Fixed Dungeon Bosses Getting Tankier the Longer the Server Ran
+
+Dungeon Boss armor and melee damage were meant to be scaled once per spawn, but a bug caused each new spawn to compound on top of the last spawn's already-scaled values instead of the original numbers — so a boss's effective armor (and the damage it hit for) quietly crept upward the longer the server stayed up, with melee and missile hits landing for less and less over time. Magic damage was unaffected, which is why bosses could feel fine to casters but increasingly spongy to weapon users. This has been fixed; bosses now scale correctly from their authored values on every spawn.
+
+### 🏟️ New Arena — Xarabydun Lifestone
+
+A new arena location, **Xarabydun Lifestone**, has been added to the queue. It hosts **2v2**, **FFA**, **Tugak**, and **Group** matches, with ten starting positions spread around the room. When you queue for those formats you may now be matched into Xarabydun Lifestone or one of the existing arenas — the system picks an open location automatically.
+
+The dungeon's lifestone and portals have been removed, and any lifestone or portal ties players had inside it are cleared. If that lifestone was your tie, you'll need to re-tie somewhere else.
+
+### 💰 Skill and Attribute Reset Gem — Cheaper
+
+The **Skill and Attribute Reset Gem** now costs **20 Phials of Bloody Tears** from Darkbeat, down from 50. Its escalating PK Trophy cost per use is unchanged.
+
+### 🔥 Hot Dungeons — Logout Delay
+
+The extra rewards inside a Hot Dungeon now come with extra risk. While you're standing in an active Hot Dungeon, **logging out is delayed** just like it is for Player Killers — your character stays frozen in the world for a short time before actually leaving. No more instantly quitting to escape a bad spot.
+
+**Recalls still work normally** — portal recall, lifestone recall spells, and commands like `/lifestone` are unaffected. This only delays a straight logout.
+
+### 🎰 Tinkering Lottery — Two New Salvage Families Can Win
+
+The tinkering lottery now fires on ten more salvage types. As always, it only rolls on a **successful** tinker, and any winnings are announced to everyone nearby.
+
+**Minor attribute cantrip salvage** — Agate (Focus), Bloodstone (Endurance), Carnelian (Strength), Lapis Lazuli (Willpower), Smokey Quartz (Coordination), and Rose Quartz (Quickness) can now win:
+
+- A chunk of extra **maximum mana** on the item, or a **slower mana burn rate** — up to about 40 extra seconds per tick. One or the other, not both.
+- A **5% chance to upgrade that salvage's Minor cantrip to its Moderate version** — Minor Focus becomes Moderate Focus, and so on. The item has to already have the matching Minor.
+- A **10% chance each** at a **Creature Resistance Rating** or a **Creature Slayer Rating**, if the item doesn't already have one.
+
+**Heritage and rank salvage** — Ebony, Porcelain, and Teak (which change an item's racial requirement) and Silk (which removes its allegiance rank requirement) can now win:
+
+- A **50% chance at +10–20 Armor Level** on armor.
+- **Jackpot:** using **workmanship 10 salvage** on an item of **workmanship 6 or lower** adds a further 15% chance at another +10–20 AL on top.
+- The same **10% each** at a Creature Resistance or Creature Slayer Rating.
+
+### 🧬 New Morph Gem — Racial Requirement Removal
+
+A new **Racial Requirement Morph Gem** strips the racial restriction off armor, weapons, and casters. That breastplate that only activates its spells for a Sho? Apply the gem and it activates for anybody — the item is left with no racial requirement at all, covering both the racial activation requirement on its spells and any racial wield requirement.
+
+Sold by **Darkbeat for 30 Phials of Bloody Tears**, and it also drops from the **Mythic Mystery Box** (~9.4%). Like the other requirement-removal gems, it works on quest and rare gear as well as loot-gen items.
+
+### 🎖️ New Morph Gem — Allegiance Rank Requirement Removal
+
+Its companion, the **Allegiance Rank Requirement Morph Gem**, clears the rank gate off items that spawn with *"Activation requires allegiance rank 6"* and similar. The item keeps its spells and is left with no rank requirement at all, so it works no matter where you sit in your monarchy — or whether you're in one.
+
+Silk tinkering already removed this requirement, but it burns a tinker and resets the item's Arcane Lore to its Spellcraft. The gem does neither.
+
+Sold by **Darkbeat for 30 Phials of Bloody Tears**, and it also drops from the **Mythic Mystery Box** (~9.4%). Like the other requirement-removal gems, it works on quest and rare gear as well as loot-gen items.
+
+> Adding both new gems to the Mythic Mystery Box nudged every other prize in it down slightly — the weight-3 prizes go from ~10.3% to ~9.4%, and the Ancient Bottle and Shimmering Skeleton Key from ~3.4% to ~3.1%.
+
+### 👑 Allegiance Swearing — Now Costs PK Trophies
+
+The allegiance swear **cooldown is gone**, replaced by a **PK-trophy cost** that rises the more you hop allegiances. Every character gets its **first 3 swears free**; after that each swear costs trophies from your inventory on a steep curve — **100** for the 4th, then climbing to a cap of **10,000** by the 15th swear (roughly: 4th = 100, 7th = 351, 10th = 1,232, 13th = 4,328, 15th+ = 10,000). The count is per character and never resets. Swearing to your own alt with `/OfflineSwear` costs and counts the same, so it can't be used to dodge the fee.
+
+The old re-swear cooldown, the "3 free chain re-arranges," and the timed lockout are all removed. The account-wide rule still stands: all characters on an account must be in the same allegiance (or unsworn).
+
+### 👑 Leaving an Allegiance — Vassals Released One Level
+
+When you **break** from your allegiance or are **kicked or booted**, your **direct vassals are now released** and each becomes their own monarch (keeping their own sub-vassals), and you are left unsworn. This only cascades **one level** — your vassals' vassals stay with your vassals. Previously your whole sub-tree followed you out.
+
+---
+
+## 🩹 v1.16 — August 10, 2026
+
+### 🔩 Abandoned Mine — Zerg Cap Lowered to 5
+
+The zerg-control cap on the Abandoned Mine (Subway) has been lowered from **9 players per allegiance** to **5**.
+
+### 👹 Dungeon Bosses — Take Roughly 2× Melee/Missile Damage
+
+Dungeon Bosses were mitigating far more physical damage than intended — some were letting as little as 4% of a melee or missile hit through. Their armor has been roughly halved, so weapon damage now lands noticeably harder across all five bosses. Their resistance to spell damage is unchanged.
+
+### 🛡️ Anti-Cheat — Closed a Door/Wall Jump-Clip Exploit
+
+Fixed a movement exploit that allowed a player to bypass a closed door or wall by jumping through it under specific timing.
+
+### 💎 Creature Slayer & Creature Resistance Morph Gems — Fixed Wrong Target Type
+
+These two morph gems were flagged with an incorrect target type, causing them to be rejected on some items they should have been usable on. They now work correctly.
+
+### 🏰 Hometown Control — Defenders' Mended Hits No Longer Also Damage the Bind Stone
+
+Fixed a bug where a defender mending the Bind Stone (or a non-PK's attack being reflected) still dealt its full damage to the stone at the same time as the heal — quietly undermining the "defenders mend the stone" mechanic. Mended and reflected hits now correctly deal no damage to the stone.
+
+### 📦 Steel Chest & Sturdy Steel Chest — Now Regenerate Instantly on Close
+
+These chests now re-lock and reroll their contents the moment you close them, the same way Darkbeat's Storage Locker does, instead of waiting out their normal respawn timer. (this was content deployed manually after v1.15 but before v1.16 was released)
+
+### 🔧 Tinkering Trinket Now Also Grants Brilliance
+
+The **Tinkering Trinket** carries the **Brilliance** buff alongside its existing attribute and crafting buffs. Existing Tinkers can pick it up on their current trinket by re-running `/FlagTinker`, which patches new trinket buffs onto an already-flagged Tinker in place.
+
+### 🚀 Catch-Up XP — Start Late, Catch Up Fast
+
+Rolling a new character mid-season, or joining the server weeks after launch, no longer means grinding from behind forever. If your **total XP is under 70% of the current season XP cap**, every point of XP you earn is **multiplied** — and the further behind you are, the bigger the multiplier.
+
+| Your total XP vs. the season cap | XP boost |
+|---|---|
+| Just starting out (0%) | **5×** |
+| 35% of cap | **3.5×** |
+| Halfway there (52.5%) | **2.75×** |
+| Just under 70% | **2×** |
+| 70% of cap or above | no boost |
+
+The boost slides smoothly between those points — it isn't a set of tiers, it recalculates from exactly how far behind the cap you are, and it eases off on its own as you close the gap. Once you cross 70% of the cap you're considered caught up and earn at the normal rate.
+
+**It stacks with everything else.** The catch-up boost multiplies on top of the season XP rate and your allegiance's hometown bonus. Late in the season, when the rate is running at 3×, a fresh character can be earning **15× XP**.
+
+**It doesn't raise your ceiling.** The global cap and your Monster / Quest / PK budgets are unchanged — the boost simply gets you to them a lot faster.
+
+Check your current multiplier on the **Catch-Up** line of `/season status`.
 
 ---
 

@@ -27,11 +27,14 @@ namespace ACE.Server.Entity
         public const uint MorphGemRemoveMeleeDReq  = 480483;
         public const uint MorphGemRandomizeWeaponImbue = 480486;
         public const uint MorphGemRemovePlayerReq  = 480485;
+        public const uint MorphGemRemoveRacialReq  = 480642;
+        public const uint MorphGemRemoveAllegianceReq = 480643;
         public const uint MorphGemCreatureSlayerRandom = 480610;
         public const uint MorphGemCreatureResistRandom = 600039;
         public const uint MorphGemSlayerUpgrade    = 480639;
         //public const uint MorphGemBurningCoal      = 480638;
         public const uint MorphGemImpen            = 490025;
+        public const uint MorphGemLesserImpen      = 490050;
         //public const uint MorphGemBanditHilt       = 490026;
         //public const uint MorphGemRareUpgrade      = 490040;
         //public const uint MorphGemRareReduction    = 490270;
@@ -61,10 +64,13 @@ namespace ACE.Server.Entity
             MorphGemRemoveMeleeDReq,
             MorphGemRandomizeWeaponImbue,
             MorphGemRemovePlayerReq,
+            MorphGemRemoveRacialReq,
+            MorphGemRemoveAllegianceReq,
             MorphGemCreatureSlayerRandom,
             MorphGemCreatureResistRandom,
             MorphGemSlayerUpgrade,
             MorphGemImpen,
+            MorphGemLesserImpen,
             MorphGemJewelersSawblade,
             MorphGemAddSlayer,
             MorphGemRandomCantrip,
@@ -101,10 +107,13 @@ namespace ACE.Server.Entity
         private static readonly HashSet<uint> morphGemsAllowedNonLootGen = new HashSet<uint>()
         {
             MorphGemRemovePlayerReq,
+            MorphGemRemoveRacialReq,
+            MorphGemRemoveAllegianceReq,
             MorphGemRemoveMissileDReq,
             MorphGemRemoveMeleeDReq,
             MorphGemJewelersSawblade,
             MorphGemImpen,
+            MorphGemLesserImpen,
         };
 
         #endregion readonly references
@@ -299,31 +308,26 @@ namespace ACE.Server.Entity
                     #region MorphGemRandomizeWeaponImbue
                     case MorphGemRandomizeWeaponImbue:
 
-                        var isValid = false;
-                        var hasFetish = target.HasImbuedEffect(ImbuedEffectType.IgnoreSomeMagicProjectileDamage);
-
-                        if (target.HasImbuedEffect(ImbuedEffectType.CripplingBlow) ||
+                        //Target must have an AR/CS/CB imbue
+                        if (!(target.HasImbuedEffect(ImbuedEffectType.CripplingBlow) ||
                             target.HasImbuedEffect(ImbuedEffectType.ArmorRending) ||
-                            target.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
-                        {
-                            isValid = true;
-                        }
-
-                        if (!isValid)
+                            target.HasImbuedEffect(ImbuedEffectType.CriticalStrike)))
                         {
                             player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
                             return;
                         }
 
+                        var hasFetish = target.HasImbuedEffect(ImbuedEffectType.IgnoreSomeMagicProjectileDamage);
+
                         var origImbueEffect = target.ImbuedEffect;
                         var roll = ThreadSafeRandom.Next(0, 1);
 
                         if (target.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
-                            target.ImbuedEffect = roll == 0 ? ImbuedEffectType.ArmorRending : ImbuedEffectType.CriticalStrike;
+                            target.ImbuedEffect = (roll == 0 && target.WeenieType != WeenieType.Caster) ? ImbuedEffectType.ArmorRending : ImbuedEffectType.CriticalStrike;
                         else if (target.HasImbuedEffect(ImbuedEffectType.ArmorRending))
                             target.ImbuedEffect = roll == 0 ? ImbuedEffectType.CripplingBlow : ImbuedEffectType.CriticalStrike;
                         else if (target.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
-                            target.ImbuedEffect = roll == 0 ? ImbuedEffectType.ArmorRending : ImbuedEffectType.CripplingBlow;
+                            target.ImbuedEffect = (roll == 0 && target.WeenieType != WeenieType.Caster) ? ImbuedEffectType.ArmorRending : ImbuedEffectType.CripplingBlow;
 
                         target.IconUnderlayId = RecipeManager.IconUnderlay[target.ImbuedEffect];
 
@@ -365,6 +369,66 @@ namespace ACE.Server.Entity
                         break;
 
                     #endregion MorphGemRemovePlayerReq
+
+                    #region MorphGemRemoveRacialReq
+                    case MorphGemRemoveRacialReq:
+
+                        var hasRacialActivationReq = target.HeritageGroup != HeritageGroup.Invalid;
+                        var hasRacialWieldReq = HasHeritageWieldRequirement(target);
+
+                        if (!hasRacialActivationReq && !hasRacialWieldReq)
+                        {
+                            playerMsg = $"Your {target.NameWithMaterial} does not currently have a racial requirement to remove.";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        //capture the race for the player message before either requirement is cleared
+                        var origRace = hasRacialActivationReq
+                            ? target.ItemHeritageGroupRestriction ?? target.HeritageGroup.ToString()
+                            : GetHeritageWieldRequirement(target).ToString();
+
+                        if (hasRacialActivationReq)
+                        {
+                            player.UpdateProperty(target, PropertyInt.HeritageGroup, null);
+                            player.UpdateProperty(target, PropertyString.ItemHeritageGroupRestriction, null);
+                        }
+
+                        if (hasRacialWieldReq)
+                            RemoveHeritageWieldRequirement(target);
+
+                        playerMsg = $"You apply the Morph Gem skillfully and have removed the {origRace} racial requirement from your {target.NameWithMaterial}.";
+                        AddMorphGemLog(target, MorphGemRemoveRacialReq);
+
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                        break;
+
+                    #endregion MorphGemRemoveRacialReq
+
+                    #region MorphGemRemoveAllegianceReq
+                    case MorphGemRemoveAllegianceReq:
+
+                        //there is no wield side allegiance requirement to sweep - WieldRequirement.IntStat is unused in PY16
+                        var allegianceRankReq = target.ItemAllegianceRankLimit ?? 0;
+
+                        if (allegianceRankReq <= 0)
+                        {
+                            playerMsg = $"Your {target.NameWithMaterial} does not currently have an allegiance rank requirement to remove.";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        player.UpdateProperty(target, PropertyInt.ItemAllegianceRankLimit, null);
+
+                        playerMsg = $"You apply the Morph Gem skillfully and have removed the allegiance rank {allegianceRankReq} requirement from your {target.NameWithMaterial}.";
+                        AddMorphGemLog(target, MorphGemRemoveAllegianceReq);
+
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                        break;
+
+                    #endregion MorphGemRemoveAllegianceReq
 
                     #region MorphGemCreatureSlayerRandom
                     case MorphGemCreatureSlayerRandom:
@@ -543,7 +607,7 @@ namespace ACE.Server.Entity
 
                         var spellId = 0;
                         var impenLevel = ThreadSafeRandom.Next(0, 99);
-                        if (impenLevel < 97)
+                        if (impenLevel < 67)
                         {
                             spellId = 2604;
                             playerMsg = String.Format(playerMsg, "a Minor", target.Name);
@@ -561,6 +625,76 @@ namespace ACE.Server.Entity
                         break;
 
                     #endregion MorphGemImpen
+
+                    #region MorphGemLesserImpen
+                    case MorphGemLesserImpen:
+
+                        if (target.WeenieType != WeenieType.Clothing)
+                        {
+                            playerMsg = "The gem can only be applied to armor and underclothes";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        if (target.ArmorLevel > 0 && target.ItemWorkmanship == null && !target.GetProperty(PropertyInt.RareId).HasValue)
+                        {
+                            playerMsg = "The gem cannot be applied quest armor, only loot gen or rare armor";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        if (!target.ItemMaxMana.HasValue || targetItemSpells == null || targetItemSpells.Count == 0)
+                        {
+                            playerMsg = "The gem can only be applied to magical items";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        // Major or better cannot be improved any further by this gem
+                        if (targetItemSpells.Contains(2592) ||
+                            targetItemSpells.Contains(4667) ||
+                            targetItemSpells.Contains(6095) ||
+                            targetItemSpells.Contains(3710))
+                        {
+                            playerMsg = "The gem cannot be used on an item that already has a Major Impenetrability cantrip";
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                            player.SendUseDoneEvent(WeenieError.YouDoNotPassCraftingRequirements);
+                            return;
+                        }
+
+                        var lesserImpenHasMinor = targetItemSpells.Contains(2604);
+                        var lesserImpenIsMajor = ThreadSafeRandom.Next(0, 99) >= 97;
+
+                        if (lesserImpenHasMinor)
+                        {
+                            // Rolling to upgrade the existing Minor Impenetrability into a Major Impenetrability
+                            if (lesserImpenIsMajor)
+                            {
+                                RemoveAllCantripsInProgression(target, 2592);
+                                target.Biota.GetOrAddKnownSpell(2592, target.BiotaDatabaseLock, out _);
+                                playerMsg = $"You successfully apply the morph gem and have upgraded the Minor Impenetrability cantrip on your {target.Name} to a Major Impenetrability cantrip";
+                            }
+                            else
+                            {
+                                playerMsg = $"You apply the morph gem, but it fails to strengthen the Minor Impenetrability cantrip on your {target.Name}";
+                            }
+                        }
+                        else
+                        {
+                            var lesserImpenSpellId = lesserImpenIsMajor ? 2592 : 2604;
+                            target.Biota.GetOrAddKnownSpell(lesserImpenSpellId, target.BiotaDatabaseLock, out _);
+                            playerMsg = $"You successfully apply the morph gem and have added {(lesserImpenIsMajor ? "a Major" : "a Minor")} Impenetrability cantrip to your {target.Name}";
+                        }
+
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(playerMsg, ChatMessageType.Broadcast));
+                        AddMorphGemLog(target, MorphGemLesserImpen);
+
+                        break;
+
+                    #endregion MorphGemLesserImpen
 
                     #region MorphGemBanditHilt
 //                    case 490026: // MorphGemBanditHilt
@@ -1474,6 +1608,72 @@ namespace ACE.Server.Entity
             });
 
             return removedAny;
+        }
+
+        /// <summary>
+        /// Returns true if any of the target's four wield requirement slots is a heritage requirement.
+        /// </summary>
+        private static bool HasHeritageWieldRequirement(WorldObject target)
+        {
+            return target.WieldRequirements == WieldRequirement.HeritageType
+                || target.WieldRequirements2 == WieldRequirement.HeritageType
+                || target.WieldRequirements3 == WieldRequirement.HeritageType
+                || target.WieldRequirements4 == WieldRequirement.HeritageType;
+        }
+
+        /// <summary>
+        /// Returns the heritage required by the target's first heritage wield requirement slot,
+        /// or Invalid if it has none. The heritage is stored in the slot's WieldDifficulty.
+        /// </summary>
+        private static HeritageGroup GetHeritageWieldRequirement(WorldObject target)
+        {
+            if (target.WieldRequirements == WieldRequirement.HeritageType)
+                return (HeritageGroup)(target.WieldDifficulty ?? 0);
+
+            if (target.WieldRequirements2 == WieldRequirement.HeritageType)
+                return (HeritageGroup)(target.WieldDifficulty2 ?? 0);
+
+            if (target.WieldRequirements3 == WieldRequirement.HeritageType)
+                return (HeritageGroup)(target.WieldDifficulty3 ?? 0);
+
+            if (target.WieldRequirements4 == WieldRequirement.HeritageType)
+                return (HeritageGroup)(target.WieldDifficulty4 ?? 0);
+
+            return HeritageGroup.Invalid;
+        }
+
+        /// <summary>
+        /// Removes any heritage-based wield requirement on the target, across all four wield requirement slots.
+        /// </summary>
+        private static void RemoveHeritageWieldRequirement(WorldObject target)
+        {
+            if (target.WieldRequirements == WieldRequirement.HeritageType)
+            {
+                target.WieldRequirements = WieldRequirement.Invalid;
+                target.WieldSkillType = null;
+                target.WieldDifficulty = null;
+            }
+
+            if (target.WieldRequirements2 == WieldRequirement.HeritageType)
+            {
+                target.WieldRequirements2 = WieldRequirement.Invalid;
+                target.WieldSkillType2 = null;
+                target.WieldDifficulty2 = null;
+            }
+
+            if (target.WieldRequirements3 == WieldRequirement.HeritageType)
+            {
+                target.WieldRequirements3 = WieldRequirement.Invalid;
+                target.WieldSkillType3 = null;
+                target.WieldDifficulty3 = null;
+            }
+
+            if (target.WieldRequirements4 == WieldRequirement.HeritageType)
+            {
+                target.WieldRequirements4 = WieldRequirement.Invalid;
+                target.WieldSkillType4 = null;
+                target.WieldDifficulty4 = null;
+            }
         }
 
         #region Morph Gem Log

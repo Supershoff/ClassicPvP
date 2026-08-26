@@ -221,6 +221,7 @@ namespace ACE.Entity.Enum.Properties
         IsPendingArenaObserver = 19031,
         HasArenaRareDmgBuff = 19032,
         HasArenaRareDmgReductionBuff = 19033,
+        ArenaTestTarget = 19035,               // Debug only: makes damage against this player use the pvp_dmg_mod_arena_* configs anywhere in the world
 
         // Global chat gag - silences a character in global chat channels only (say/emote/tell still work)
         IsGlobalChatGagged = 19034,

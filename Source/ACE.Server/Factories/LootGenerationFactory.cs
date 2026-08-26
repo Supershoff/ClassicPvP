@@ -11,7 +11,9 @@ using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 using log4net;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Linq;
 using WeenieClassName = ACE.Server.Factories.Enum.WeenieClassName;
 
@@ -184,6 +186,9 @@ namespace ACE.Server.Factories
                             mundaneItemLootChance = 0.4f;
                             break;
                     }
+
+                    if (creature.Location != null && HotDungeonManager.IsHotDungeon(creature.Location.LandblockId.Landblock, out _))
+                        tweakedDeathTreasure.IsHotDungeon = true;
 
                     tweakedDeathTreasure.ItemChance = (int)(tweakedDeathTreasure.ItemChance * itemLootChance);
                     tweakedDeathTreasure.MagicItemChance = (int)(tweakedDeathTreasure.MagicItemChance * magicItemLootChance);
@@ -1141,6 +1146,9 @@ namespace ACE.Server.Factories
                     if (treasureRoll.ArmorType == TreasureArmorType.Undef)
                         treasureRoll.ArmorType = ArmorTypeChance.Roll(treasureDeath.Tier);
                     treasureRoll.Wcid = ArmorWcids.Roll(treasureDeath, treasureRoll);
+
+                    if (treasureDeathExtended != null && treasureDeathExtended.IsHotDungeon)
+                        treasureRoll.Wcid = RollSingleSlotBiasedArmor(treasureDeath, treasureRoll, treasureRoll.Wcid);
                     break;
 
                 case TreasureItemType_Orig.Clothing:
@@ -1258,8 +1266,104 @@ namespace ACE.Server.Factories
                 if ((result == TreasureItemType_Orig.Lockpick || result == TreasureItemType_Orig.ManaStone || result == TreasureItemType_Orig.HealKit) && ThreadSafeRandom.Next(0, 1) != 1)
                     result = TreasureItemType_Orig.Ammo; // Convert some of these drops to ammo drops.
             }
+
+            if (treasureDeath is TreasureDeathExtended extended && extended.IsHotDungeon)
+                result = ApplyHotDungeonItemTypeBias(result, category);
+
             return result;
         }
+
+        #region Hot Dungeon loot bias
+
+        /// <summary>
+        /// Shifts the item type mix inside an active Hot Dungeon toward equipment: mundane rolls are
+        /// upgraded to weapons or armor rather than being dropped (so corpses carry the same item
+        /// count with a better mix), and low-value filler rolls are converted to weapons.
+        /// </summary>
+        private static TreasureItemType_Orig ApplyHotDungeonItemTypeBias(TreasureItemType_Orig result, TreasureItemCategory category)
+        {
+            if (category == TreasureItemCategory.MundaneItem)
+            {
+                var upgradeChance = (float)PropertyManager.GetDouble("hot_dungeon_mundane_upgrade_chance").Item;
+
+                if (ThreadSafeRandom.Next(0.0f, 1.0f) < upgradeChance)
+                    return ThreadSafeRandom.Next(0.0f, 1.0f) < 0.5f ? TreasureItemType_Orig.Weapon : TreasureItemType_Orig.Armor;
+
+                return result;
+            }
+
+            // filler rolls are the ones players vendor on sight - convert some of them to weapons.
+            // armor is left alone here; its own mix is biased in RollWcid instead.
+            if (result != TreasureItemType_Orig.Gem && result != TreasureItemType_Orig.ArtObject && result != TreasureItemType_Orig.Scroll)
+                return result;
+
+            var weaponChance = (float)PropertyManager.GetDouble("hot_dungeon_weapon_drop_bias").Item;
+
+            if (ThreadSafeRandom.Next(0.0f, 1.0f) < weaponChance)
+                return TreasureItemType_Orig.Weapon;
+
+            return result;
+        }
+
+        private static readonly ConcurrentDictionary<WeenieClassName, bool> singleSlotArmorCache = new ConcurrentDictionary<WeenieClassName, bool>();
+
+        /// <summary>
+        /// True when the armor piece occupies exactly one equipment slot (helm, breastplate, girth,
+        /// gauntlets, pauldrons, tassets, ...) as opposed to a multi-slot piece such as a coat,
+        /// cuirass, shirt, sleeves, leggings or boots.
+        /// </summary>
+        private static bool IsSingleSlotArmor(WeenieClassName wcid)
+        {
+            return singleSlotArmorCache.GetOrAdd(wcid, key =>
+            {
+                var weenie = DatabaseManager.World.GetCachedWeenie((uint)key);
+
+                if (weenie == null)
+                    return false;
+
+                var validLocations = ACE.Entity.Models.WeenieExtensions.GetProperty(weenie, PropertyInt.ValidLocations) ?? 0;
+
+                return validLocations > 0 && BitOperations.PopCount((uint)validLocations) == 1;
+            });
+        }
+
+        /// <summary>
+        /// Rerolls a multi-slot armor piece for a single-slot one, up to a small number of attempts.
+        /// Falls back to whatever was last rolled so a table with no single-slot entries still returns.
+        /// </summary>
+        private static WeenieClassName RollSingleSlotBiasedArmor(TreasureDeath treasureDeath, TreasureRoll treasureRoll, WeenieClassName rolled)
+        {
+            if (IsSingleSlotArmor(rolled))
+                return rolled;
+
+            var bias = (float)PropertyManager.GetDouble("hot_dungeon_single_slot_armor_bias").Item;
+
+            if (ThreadSafeRandom.Next(0.0f, 1.0f) >= bias)
+                return rolled;
+
+            for (var i = 0; i < 3; i++)
+            {
+                var reroll = ArmorWcids.Roll(treasureDeath, treasureRoll);
+
+                if (IsSingleSlotArmor(reroll))
+                    return reroll;
+            }
+            return rolled;
+        }
+
+        /// <summary>
+        /// The chance for a weapon's damage / variance roll to be upgraded to the best outcome
+        /// available at the wield requirement it rolled into. 0 outside of a Hot Dungeon.
+        /// </summary>
+        public static float GetHotDungeonQualityBias(TreasureDeath profile)
+        {
+            if (!(profile is TreasureDeathExtended extended) || !extended.IsHotDungeon)
+                return 0.0f;
+
+            return (float)PropertyManager.GetDouble("hot_dungeon_weapon_quality_bias").Item;
+        }
+
+        #endregion Hot Dungeon loot bias
 
         public static WorldObject CreateRandomLootObjects(int tier, TreasureItemCategory category, TreasureItemType_Orig treasureItemType = TreasureItemType_Orig.Undef, TreasureArmorType armorType = TreasureArmorType.Undef, TreasureWeaponType weaponType = TreasureWeaponType.Undef)
         {

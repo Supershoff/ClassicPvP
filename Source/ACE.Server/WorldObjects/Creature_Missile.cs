@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Numerics;
 
@@ -290,6 +290,42 @@ namespace ACE.Server.WorldObjects
             return (float)maxVelocity;
         }
 
+        /// <summary>
+        /// Returns the height above the target's base position to aim a projectile at.
+        ///
+        /// Default (retail) behavior divides the target height by GetAimHeight(), which for a player
+        /// puts the High aim point at 1.0 * Height -- the exact top of the upper collision sphere --
+        /// and the Medium aim point in the gap between the two spheres. Both are low-tolerance spots.
+        ///
+        /// With 'missile_aim_center_mass' enabled, the aim point is instead a fraction of the target
+        /// height chosen to land on a collision sphere center.
+        ///
+        /// Human collision volume (setup 0200004E): 2 spheres, r 0.48, at z 0.475 and z 1.35, Height 1.835.
+        /// Combined with an arrow radius of 0.10 that gives a 0.58m hit envelope, and lateral tolerances of:
+        ///     High   1.000 * Height = 1.835m -> 0.318m      (center-mass 0.75 -> 0.580m)
+        ///     Medium 0.500 * Height = 0.918m -> 0.386m      (center-mass 0.62 -> 0.540m)
+        ///     Low    0.333 * Height = 0.612m -> 0.564m      (center-mass 0.27 -> 0.580m)
+        ///
+        /// These fractions are derived from the player collision model specifically, so they are only
+        /// applied against player targets. Monsters use a wide variety of setups -- many are a single
+        /// sphere, where the existing Height/2 aim point is already center of mass -- and reusing the
+        /// player-tuned fractions there would be a regression rather than a fix.
+        /// </summary>
+        public float GetAimPointOffset(WorldObject target)
+        {
+            if (!PropertyManager.GetBool("missile_aim_center_mass").Item || !(target is Player))
+                return target.Height / GetAimHeight(target);
+
+            var fraction = (AttackHeight ?? ACE.Entity.Enum.AttackHeight.Medium) switch
+            {
+                ACE.Entity.Enum.AttackHeight.High => PropertyManager.GetDouble("missile_aim_center_mass_high").Item,
+                ACE.Entity.Enum.AttackHeight.Low => PropertyManager.GetDouble("missile_aim_center_mass_low").Item,
+                _ => PropertyManager.GetDouble("missile_aim_center_mass_medium").Item,
+            };
+
+            return target.Height * (float)fraction;
+        }
+
         public Vector3 GetAimVelocity(WorldObject target, float projectileSpeed)
         {
             var crossLandblock = Location.Landblock != target.Location.Landblock;
@@ -299,7 +335,7 @@ namespace ACE.Server.WorldObjects
             origin.Z += Height * ProjSpawnHeight;
 
             var dest = crossLandblock ? target.Location.ToGlobal(false) : target.Location.Pos;
-            dest.Z += target.Height / GetAimHeight(target);
+            dest.Z += GetAimPointOffset(target);
 
             var dir = Vector3.Normalize(dest - origin);
 
@@ -327,7 +363,7 @@ namespace ACE.Server.WorldObjects
             origin = sourceLoc.Pos + Vector3.Transform(localOrigin, rotation);
 
             startPos += Vector3.Transform(localOrigin, rotation);
-            endPos.Z += target.Height / GetAimHeight(target);
+            endPos.Z += GetAimPointOffset(target);
 
             var velocity = GetProjectileVelocity(target, startPos, dir, endPos, projectileSpeed, out float time);
 
@@ -385,6 +421,52 @@ namespace ACE.Server.WorldObjects
 
                         if (numSolutions > 0)
                             return s0;
+
+                        // MISSILE FIX 2: the quartic has no intercept solution across a band that is still
+                        // well inside the weapon's max range -- thrown weapons past ~21-30m and bows past
+                        // ~51-61m against a fleeing target. Retail ACE silently drops through to the
+                        // stationary solver below, which aims at where the target is standing right now:
+                        // a guaranteed miss after a 1-2s flight, with no diagnostic.
+                        //
+                        // Fall back to the lateral solver instead (the same one spell projectiles use). It
+                        // holds the horizontal speed fixed and solves for the vertical component, so it
+                        // finds a solution whenever the horizontal intercept quadratic does.
+                        //
+                        // Caveat: because no solution exists at exactly 'speed' (that is why the quartic
+                        // failed), the resulting velocity is necessarily faster than the weapon's max
+                        // velocity. Measured within each weapon's actual max range vs a target fleeing at
+                        // 6 m/s: thrown +10% at 22m rising to +18% at its ~35m range limit, bows +10% at
+                        // 55m rising to +16% at their ~76m limit. Well under the PhysicsGlobals.MaxVelocity
+                        // cap of 50, but it does mean these long shots land slightly sooner than a
+                        // strict reading of the weapon's MaximumVelocity would imply.
+                        var leadFallback = PropertyManager.GetBool("missile_lead_fallback").Item;
+                        var leadFallbackLog = PropertyManager.GetBool("missile_lead_fallback_log").Item;
+
+                        if (leadFallback || leadFallbackLog)
+                        {
+                            // NOTE: solve_ballistic_arc_lateral takes gravity as a signed acceleration
+                            // (negative == down), while solve_ballistic_arc above takes it positive-down.
+                            // The two solvers in Trajectory.cs use opposite conventions.
+                            var lateralGravity = useGravity ? PhysicsGlobals.Gravity : 0.0f;
+
+                            var solved = Trajectory.solve_ballistic_arc_lateral(origin, speed, dest, targetVelocity, lateralGravity, out var lateralVelocity, out var lateralTime, out _);
+
+                            if (leadFallbackLog)
+                            {
+                                var dist = Vector3.Distance(origin, dest);
+
+                                if (solved && lateralVelocity.IsValid())
+                                    log.Info($"[MISSILE_LEAD] {Name} - quartic found no intercept at {dist:F1}m vs targetVelocity {targetVelocity} (speed {speed:F1}). Lateral solver -> {lateralVelocity} (|v| {lateralVelocity.Length():F1}, t {lateralTime:F2}s). Applied: {leadFallback}");
+                                else
+                                    log.Info($"[MISSILE_LEAD] {Name} - quartic found no intercept at {dist:F1}m vs targetVelocity {targetVelocity} (speed {speed:F1}). Lateral solver also failed - falling through to zero-lead stationary aim");
+                            }
+
+                            if (leadFallback && solved && lateralVelocity.IsValid())
+                            {
+                                time = lateralTime;
+                                return lateralVelocity;
+                            }
+                        }
                     }
                     else
                         return Trajectory2.CalculateTrajectory(origin, dest, targetVelocity, speed, useGravity);

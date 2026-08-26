@@ -225,6 +225,19 @@ namespace ACE.Server.Entity.Mutations
                 }
 
                 effectList.Effects.Add(effect);
+
+                // record band metadata so lootgen can bias a roll toward the top of the
+                // wield band it landed in, or toward the best damage variance
+                if (pieces[0].Equals("WieldDifficulty", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(pieces[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var wieldDifficulty))
+                        effectList.WieldDifficulty = wieldDifficulty;
+                }
+                else if (pieces[0].Equals("DamageVariance", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(pieces[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var damageVariance))
+                        effectList.DamageVariance = damageVariance;
+                }
             }
 
             if (outcome != null && outcome.EffectLists.Last().Chance != 1.0f)

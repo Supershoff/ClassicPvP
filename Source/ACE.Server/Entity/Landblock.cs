@@ -190,25 +190,47 @@ namespace ACE.Server.Entity
         private double _ahPhase1AccumulatedSeconds;
         private DateTime _lastAhPhase1Broadcast = DateTime.MinValue;
         private bool _phase1Interrupted = false;
-        private double _phase1EnemyPresenceSeconds = 0; // accumulates while an enemy is within 50m
+        private double _phase1EnemyPresenceSeconds = 0; // accumulates while an enemy is within Phase1EnemyRadius
         private const double Phase1EnemyGraceSeconds = 30;
 
-        // Phase 2 repel accumulator: seconds defenders have held the stone (2+ defenders, 0 attackers within 50m)
+        // Phase 1 radii. Both the auto-start check (TryAutoStartPhase1) and the ongoing hold check
+        // (HandleAllegianceHometownTick) read these, so start and hold can never drift apart.
+        private const float Phase1AttackerRadius = 5f;    // attackers counted toward progress; 2+ required
+        private const float Phase1EnemyRadius    = 10f;   // enemy presence that interrupts, and the
+                                                          // auto-start "only one attacking allegiance" check
+
+        // Phase 2 repel accumulator: seconds defenders have held the hall (2+ defenders, 0 non-defenders present).
+        // Phase 2 is fought inside the town's meeting hall, so this state lives on the hall landblock and
+        // presence in the hall replaces the old outdoor distance rings.
         private double _phase2RepelSeconds = 0;
         private DateTime _lastPhase2RepelBroadcast = DateTime.MinValue;
-        private const float Phase2RepelDefenderRadius = 50f;   // defenders/attackers counted for the repel
-        private const float Phase2SuppressionRadius   = 100f;  // non-attacker presence that suppresses stone damage
 
-        private bool? _isAllegianceHometownLandblock;
-        public bool IsAllegianceHometownLandblock
+        private bool? _isAllegianceHometownTownLandblock;
+        /// <summary>Outdoor town landblock — Phase 0 auto-start detection and Phase 1 run here.</summary>
+        public bool IsAllegianceHometownTownLandblock
         {
             get
             {
-                if (_isAllegianceHometownLandblock == null)
-                    _isAllegianceHometownLandblock = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.IsTownLandblock(Id.Landblock);
-                return _isAllegianceHometownLandblock.Value;
+                if (_isAllegianceHometownTownLandblock == null)
+                    _isAllegianceHometownTownLandblock = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.IsTownLandblock(Id.Landblock);
+                return _isAllegianceHometownTownLandblock.Value;
             }
         }
+
+        private bool? _isAllegianceHometownHallLandblock;
+        /// <summary>Indoor meeting hall landblock — Phase 2 runs here.</summary>
+        public bool IsAllegianceHometownHallLandblock
+        {
+            get
+            {
+                if (_isAllegianceHometownHallLandblock == null)
+                    _isAllegianceHometownHallLandblock = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.IsHallLandblock(Id.Landblock);
+                return _isAllegianceHometownHallLandblock.Value;
+            }
+        }
+
+        /// <summary>True for either half of a capturable town: the outdoor town or its meeting hall.</summary>
+        public bool IsAllegianceHometownLandblock => IsAllegianceHometownTownLandblock || IsAllegianceHometownHallLandblock;
 
         /// <summary>
         /// Landblocks which have been inactive for this many seconds will be dormant
@@ -358,6 +380,23 @@ namespace ACE.Server.Entity
 
         private void HandleAllegianceHometownTick()
         {
+            // Meeting hall landblock: Phase 2 only. The hall ticks on its own landblock group, so the
+            // repel accumulator and suppression flag are maintained here rather than on the town.
+            var hallRegistry = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.GetByHallLandblock(Id.Landblock);
+            if (hallRegistry != null)
+            {
+                var hallTown = Managers.AllegianceHometownManager.GetTown(hallRegistry.TownId);
+                if (hallTown != null && hallTown.ConflictPhase == 2)
+                    HandleAllegianceHometownPhase2Tick(hallRegistry, hallTown);
+                else
+                {
+                    // Not in Phase 2 — clear the repel accumulator so the next Phase 2 starts fresh.
+                    _phase2RepelSeconds = 0;
+                    _lastPhase2RepelBroadcast = DateTime.MinValue;
+                }
+                return;
+            }
+
             var registry = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.GetByLandblock(Id.Landblock);
             if (registry == null) return;
 
@@ -368,36 +407,28 @@ namespace ACE.Server.Entity
             if (town.ConflictPhase == 0 && town.OwnerMonarchId.HasValue)
                 TryAutoStartPhase1(registry, town);
 
-            // Phase 2: participation trophies, anti-"peacing" suppression, and defender repel auto-resolution.
-            if (town.ConflictPhase == 2)
-            {
-                HandleAllegianceHometownPhase2Tick(registry, town);
-                return;
-            }
-
-            // Not in Phase 2 — clear the repel accumulator so a future Phase 2 starts fresh.
-            _phase2RepelSeconds = 0;
-            _lastPhase2RepelBroadcast = DateTime.MinValue;
+            // Phase 2 is fought in the meeting hall and ticks on that landblock, not this one.
+            if (town.ConflictPhase == 2) return;
 
             if (town.ConflictPhase != 1) return;
 
             var attackerMonarchId = town.ConflictAttackerMonarchId!.Value;
 
-            // Count attacking allegiance members within 5m of bindstone;
-            // detect enemies within 50m (main landblock + adjacents, since bindstones
+            // Count attacking allegiance members within Phase1AttackerRadius of the bindstone;
+            // detect enemies within Phase1EnemyRadius (main landblock + adjacents, since bindstones
             // can sit on a landblock boundary).
             var bindstonePos = registry.BindstonePosition;
             int attackersNear = 0;
             bool rawEnemyPresent = false;
 
-            foreach (var player in GetPlayersNearBindstone(bindstonePos, 50f))
+            foreach (var player in GetPlayersNearBindstone(bindstonePos, Phase1EnemyRadius))
             {
                 if (!player.IsPK) continue;
 
                 var allegianceMonarchId = Managers.AllegianceManager.GetVerifiedMonarchId(player) ?? player.Guid.Full;
                 if (allegianceMonarchId == attackerMonarchId)
                 {
-                    if (player.Location.DistanceTo(bindstonePos) <= 5f)
+                    if (player.Location.DistanceTo(bindstonePos) <= Phase1AttackerRadius)
                         attackersNear++;
                 }
                 else
@@ -407,7 +438,7 @@ namespace ACE.Server.Entity
             }
 
             // Accumulate enemy presence time; only interrupt once the grace period expires.
-            // An enemy must remain within 50m for 30 continuous seconds to reset progress.
+            // An enemy must remain within Phase1EnemyRadius for the full grace period to reset progress.
             bool wasEnemyPresent = _phase1EnemyPresenceSeconds > 0;
             if (rawEnemyPresent)
             {
@@ -438,8 +469,8 @@ namespace ACE.Server.Entity
                     _ahPhase1AccumulatedSeconds = 0;
                     _phase1Interrupted = false;
                     _phase1EnemyPresenceSeconds = 0;
-                    _phase2RepelSeconds = 0;
-                    _lastPhase2RepelBroadcast = DateTime.MinValue;
+                    // The repel accumulator lives on the meeting hall landblock and is cleared by its
+                    // own tick whenever the town isn't in Phase 2, so there is nothing to reset here.
                     Managers.AllegianceHometownManager.StartPhase2(registry.TownId);
                     SpawnPhase2Proxy(registry);
                     // Reward the attacking allegiance for breaching Phase 2 (5 PK Trophies each, default).
@@ -492,7 +523,7 @@ namespace ACE.Server.Entity
                     }
                     else
                     {
-                        progressMsg = $"[{registry.TownName}] Phase 1 assault paused — need at least 2 attackers within 5m of the Bind Stone. " +
+                        progressMsg = $"[{registry.TownName}] Phase 1 assault paused — need at least 2 attackers within {Phase1AttackerRadius:0.#}m of the Bind Stone. " +
                                       $"Progress: {_ahPhase1AccumulatedSeconds:0}/{phase1Duration:0}s";
                     }
 
@@ -507,52 +538,53 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Phase 2 landblock tick (every 5 s): awards participation trophies, updates the anti-"peacing"
+        /// Phase 2 meeting hall tick (every 5 s): awards participation trophies, updates the anti-"peacing"
         /// damage-suppression flag on the proxy, and auto-resolves the conflict as a repelled attack once
-        /// the defenders hold the Bind Stone area (2+ defenders, 0 attackers within 50 m) long enough.
+        /// the defenders hold the hall (2+ defenders, 0 non-defenders present) long enough.
+        ///
+        /// Phase 2 is fought indoors, so every check here is presence-in-the-hall rather than a distance
+        /// ring: the hall is a small dedicated dungeon landblock with a single entrance, and being inside
+        /// it *is* being in the fight. Only the bind stone damage falloff remains distance-based
+        /// (see AllegianceHometownManager.GetDistanceMultiplier), so attackers still have to close on the
+        /// stone rather than plink it from the entry corridor.
         /// </summary>
         private void HandleAllegianceHometownPhase2Tick(
             ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.TownEntry registry,
             ACE.Database.Models.Log.AllegianceHometownTown town)
         {
-            var bindstonePos      = registry.BindstonePosition;
             var attackerMonarchId = town.ConflictAttackerMonarchId;
             var ownerMonarchId    = town.OwnerMonarchId;
 
-            int defendersNear    = 0;           // owner-allegiance PKs within the repel radius
-            int nonDefendersNear = 0;           // any non-defender PK within the repel radius (attackers + neutrals)
-            bool nonAttackerNearStone = false;  // any non-attacker PK within the suppression radius
-            var participants = new List<Player>(); // attackers + defenders in range, for periodic trophies
+            int defendersNear    = 0;           // owner-allegiance PKs in the hall
+            int nonDefendersNear = 0;           // any non-defender PK in the hall (attackers + neutrals)
+            bool nonAttackerNearStone = false;  // any non-attacker PK in the hall
+            var participants = new List<Player>(); // attackers + defenders in the hall, for periodic trophies
 
-            foreach (var player in GetPlayersNearBindstone(bindstonePos, Phase2SuppressionRadius))
+            foreach (var player in GetPlayers())
             {
                 if (!player.IsPK) continue;
 
                 var monarchId  = Managers.AllegianceManager.GetVerifiedMonarchId(player) ?? player.Guid.Full;
-                var dist       = player.Location.DistanceTo(bindstonePos);
                 bool isAttacker = attackerMonarchId.HasValue && monarchId == attackerMonarchId.Value;
                 bool isDefender = ownerMonarchId.HasValue    && monarchId == ownerMonarchId.Value;
 
-                if (!isAttacker && dist <= Phase2SuppressionRadius)
+                if (!isAttacker)
                     nonAttackerNearStone = true;
 
-                if (dist <= Phase2RepelDefenderRadius)
+                if (isDefender)
                 {
-                    if (isDefender)
-                    {
-                        defendersNear++;
-                        participants.Add(player);
-                    }
-                    else
-                    {
-                        // Attackers and neutral third parties alike block the repel.
-                        nonDefendersNear++;
-                        if (isAttacker) participants.Add(player); // only attackers earn participation trophies
-                    }
+                    defendersNear++;
+                    participants.Add(player);
+                }
+                else
+                {
+                    // Attackers and neutral third parties alike block the repel.
+                    nonDefendersNear++;
+                    if (isAttacker) participants.Add(player); // only attackers earn participation trophies
                 }
             }
 
-            // Anti-"peacing": suppress bindstone damage while any non-attacker lingers near the stone.
+            // Anti-"peacing": suppress bindstone damage while any non-attacker is in the hall.
             var proxy = Managers.AllegianceHometownManager.GetPhase2Proxy(registry.TownId);
             if (proxy != null)
                 proxy.SuppressDamage = nonAttackerNearStone;
@@ -575,7 +607,7 @@ namespace ACE.Server.Entity
                     _lastPhase2RepelBroadcast = now;
                     EnqueueBroadcast(null, false, null, null,
                         new Network.GameMessages.Messages.GameMessageSystemChat(
-                            $"[{registry.TownName}] The defenders have cleared the Bind Stone! Hold for {repelTarget / 60.0:0.#} minute(s) to repel the attack.",
+                            $"[{registry.TownName}] The defenders have cleared the Meeting Hall! Hold it for {repelTarget / 60.0:0.#} minute(s) to repel the attack.",
                             ACE.Entity.Enum.ChatMessageType.WorldBroadcast));
                 }
 
@@ -596,7 +628,7 @@ namespace ACE.Server.Entity
                     var remaining = Math.Max(0, repelTarget - _phase2RepelSeconds);
                     EnqueueBroadcast(null, false, null, null,
                         new Network.GameMessages.Messages.GameMessageSystemChat(
-                            $"[{registry.TownName}] Repelling the attack — {remaining:0}s until {town.ConflictAttackerName} is driven off. Any enemy returning to the stone will interrupt.",
+                            $"[{registry.TownName}] Repelling the attack — {remaining:0}s until {town.ConflictAttackerName} is driven off. Any enemy entering the Meeting Hall will interrupt.",
                             ACE.Entity.Enum.ChatMessageType.WorldBroadcast));
                 }
             }
@@ -605,7 +637,7 @@ namespace ACE.Server.Entity
                 if (_phase2RepelSeconds > 0)
                     EnqueueBroadcast(null, false, null, null,
                         new Network.GameMessages.Messages.GameMessageSystemChat(
-                            $"[{registry.TownName}] Repel interrupted — an enemy is back at the Bind Stone.",
+                            $"[{registry.TownName}] Repel interrupted — an enemy has entered the Meeting Hall.",
                             ACE.Entity.Enum.ChatMessageType.WorldBroadcast));
 
                 _phase2RepelSeconds = 0;
@@ -646,12 +678,12 @@ namespace ACE.Server.Entity
             var ownerMonarchId = town.OwnerMonarchId!.Value;
 
             // Pass 1: count non-owner PKs near the bindstone per allegiance,
-            //         and track all non-owner allegiances present anywhere on the landblock.
-            var nearCount          = new Dictionary<uint, int>();    // monarchId → players within 5m
+            //         and track all non-owner allegiances inside Phase1EnemyRadius.
+            var nearCount          = new Dictionary<uint, int>();    // monarchId → players within Phase1AttackerRadius
             var allegianceIdentity = new Dictionary<uint, string>(); // monarchId → allegiance identity
-            var allMonarchIds      = new System.Collections.Generic.HashSet<uint>(); // all non-owner allegiances on lb
+            var allMonarchIds      = new System.Collections.Generic.HashSet<uint>(); // all non-owner allegiances in range
 
-            foreach (var player in GetPlayersNearBindstone(bindstonePos, 50f))
+            foreach (var player in GetPlayersNearBindstone(bindstonePos, Phase1EnemyRadius))
             {
                 if (!player.IsPK) continue;
                 var monarchId = Managers.AllegianceManager.GetVerifiedMonarchId(player) ?? player.Guid.Full;
@@ -666,19 +698,19 @@ namespace ACE.Server.Entity
                 if (!allegianceIdentity.ContainsKey(monarchId))
                     allegianceIdentity[monarchId] = Managers.AllegianceHometownManager.GetAllegianceIdentity(player);
 
-                if (player.Location.DistanceTo(bindstonePos) <= 5f)
+                if (player.Location.DistanceTo(bindstonePos) <= Phase1AttackerRadius)
                 {
                     nearCount.TryGetValue(monarchId, out var c);
                     nearCount[monarchId] = c + 1;
                 }
             }
 
-            // Must be exactly one non-owner allegiance within 50m of the bindstone
+            // Must be exactly one non-owner allegiance within Phase1EnemyRadius of the bindstone
             if (allMonarchIds.Count != 1) return;
 
             var attackerMonarchId = allMonarchIds.First();
 
-            // Must have 2+ members within 5m of the bindstone
+            // Must have 2+ members within Phase1AttackerRadius of the bindstone
             nearCount.TryGetValue(attackerMonarchId, out var nearPlayers);
             if (nearPlayers < 2) return;
 
@@ -694,31 +726,17 @@ namespace ACE.Server.Entity
             }
         }
 
+        /// <summary>
+        /// Called on the town landblock when Phase 1 completes. Cloaks the real outdoor bind stone here,
+        /// then spawns the attackable proxy inside the town's meeting hall.
+        ///
+        /// The hall is a separate landblock on its own landblock group, so the proxy is created and added
+        /// on the hall's own action queue rather than from this thread. The permaload also moves to the
+        /// hall — that is the landblock that must stay loaded for the duration of Phase 2.
+        /// </summary>
         private void SpawnPhase2Proxy(Entity.AllegianceHometown.AllegianceHometownRegistry.TownEntry entry)
         {
-            // Hold this landblock loaded so it never goes dormant or unloads while the proxy is
-            // alive. The deadline is the backstop: if Phase 2 ends badly and nothing lifts the
-            // permaload, the landblock still releases itself rather than staying pinned forever.
-            SetPermaload(DateTime.UtcNow.Add(Managers.AllegianceHometownManager.Phase2PermaloadDuration));
-
-            var proxy = WorldObjectFactory.CreateNewWorldObject(ACE.Database.CustomWeenieId.BindstoneCreatureProxy)
-                        as WorldObjects.BindstoneCreatureProxy;
-            if (proxy == null)
-            {
-                log.Error($"[AllegianceHometown] Failed to create BindstoneCreatureProxy (wcid {ACE.Database.CustomWeenieId.BindstoneCreatureProxy}) for {entry.TownName}.");
-                ClearTimedPermaload();
-                return;
-            }
-
-            proxy.TownId    = entry.TownId;
-            proxy.Location  = new Position(entry.BindstonePosition);
-            proxy.TimeToRot = -1; // Never decay — proxy is destroyed explicitly when Phase 2 ends
-
-            var maxHp = (uint)Managers.AllegianceHometownManager.ComputeBindstoneHp();
-            proxy.Health.StartingValue = maxHp;
-            proxy.UpdateVital(proxy.Health, maxHp);
-
-            // Cloak the real bindstone so only the proxy is visible.
+            // Cloak the real (outdoor) bind stone so only the hall proxy is a valid target.
             // Must send DeleteObject after setting physics state so already-tracked clients remove it.
             var realBindstone = worldObjects.Values
                 .OfType<WorldObjects.Bindstone>()
@@ -735,10 +753,49 @@ namespace ACE.Server.Entity
                 Managers.AllegianceHometownManager.RegisterPhase2CloakedBindstone(entry.TownId, realBindstone);
             }
 
-            AddWorldObject(proxy);
-            Managers.AllegianceHometownManager.RegisterPhase2Proxy(entry.TownId, proxy);
+            var hallLb = Managers.LandblockManager.GetLandblock(entry.Phase2Position.LandblockId, false);
+            if (hallLb == null)
+            {
+                log.Error($"[AllegianceHometown] Could not load meeting hall landblock 0x{entry.HallLandblockId:X4} for {entry.TownName}; Phase 2 has no bind stone. Forcing the conflict closed.");
+                Managers.AllegianceHometownManager.ForceEndConflict(entry.TownId);
+                return;
+            }
 
-            log.Info($"[AllegianceHometown] Phase 2 proxy spawned for {entry.TownName} with {maxHp:N0} HP.");
+            // Hold the hall loaded so it never goes dormant or unloads while the proxy is alive. The
+            // deadline is the backstop: if Phase 2 ends badly and nothing lifts the permaload, the
+            // landblock still releases itself rather than staying pinned forever.
+            hallLb.SetPermaload(DateTime.UtcNow.Add(Managers.AllegianceHometownManager.Phase2PermaloadDuration));
+
+            hallLb.EnqueueAction(new ActionEventDelegate(() =>
+            {
+                var proxy = WorldObjectFactory.CreateNewWorldObject(ACE.Database.CustomWeenieId.BindstoneCreatureProxy)
+                            as WorldObjects.BindstoneCreatureProxy;
+                if (proxy == null)
+                {
+                    log.Error($"[AllegianceHometown] Failed to create BindstoneCreatureProxy (wcid {ACE.Database.CustomWeenieId.BindstoneCreatureProxy}) for {entry.TownName}.");
+                    hallLb.ClearTimedPermaload();
+                    Managers.AllegianceHometownManager.ForceEndConflict(entry.TownId);
+                    return;
+                }
+
+                proxy.TownId    = entry.TownId;
+                proxy.Location  = new Position(entry.Phase2Position);
+                proxy.TimeToRot = -1; // Never decay — proxy is destroyed explicitly when Phase 2 ends
+
+                var maxHp = (uint)Managers.AllegianceHometownManager.ComputeBindstoneHp();
+                proxy.Health.StartingValue = maxHp;
+                proxy.UpdateVital(proxy.Health, maxHp);
+
+                // The hall may have been sitting dormant (empty since someone last visited). Permaload only
+                // stops it going dormant from here on; it does not wake one that already is. Without this the
+                // proxy's heartbeat — the only thing that can time Phase 2 out — would never tick.
+                hallLb.SetActive();
+
+                hallLb.AddWorldObject(proxy);
+                Managers.AllegianceHometownManager.RegisterPhase2Proxy(entry.TownId, proxy);
+
+                log.Info($"[AllegianceHometown] Phase 2 proxy spawned for {entry.TownName} in meeting hall 0x{entry.HallLandblockId:X4} with {maxHp:N0} HP.");
+            }));
         }
 
         public void RefreshExplorationMarkers(bool forceRefresh = false)

@@ -6,6 +6,7 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Animation;
+using ACE.Server.Physics.Extensions;
 
 namespace ACE.Server.WorldObjects
 {
@@ -245,7 +246,36 @@ namespace ACE.Server.WorldObjects
                 var staminaCost = GetAttackStamina(GetAccuracyRange());
                 UpdateVitalDelta(Stamina, -staminaCost);
 
-                var projectile = LaunchProjectile(launcher, ammo, target, origin, orientation, velocity);
+                var launchOrigin = origin;
+                var launchOrientation = orientation;
+                var launchVelocity = velocity;
+
+                // MISSILE FIX 1: the firing solution above was calculated before the turn and before the
+                // aim animation played, but the projectile only spawns now. Measured from client_portal.dat
+                // (motion table 0900020D), that gap is 0.033s for a level bow shot, 0.167-0.567s for
+                // elevated bow shots, and a flat 0.378s for every thrown weapon attack -- plus the rotate
+                // time on repeat attacks against a circling target. Both the intercept prediction and the
+                // spawn origin are stale by that much, so the arrow also leaves from where the shooter was
+                // rather than where they are.
+                //
+                // Re-solve here, at the instant the projectile actually spawns. aimLevel (and therefore
+                // localOrigin) is deliberately reused from the earlier pass: the aim animation has already
+                // played, so the spawn offset must stay consistent with what the client rendered.
+                if (ACE.Server.Managers.PropertyManager.GetBool("missile_fresh_solution").Item)
+                {
+                    var freshVelocity = CalculateProjectileVelocity(localOrigin, target, projectileSpeed, out var freshOrigin, out var freshOrientation);
+
+                    // if the re-solve fails (target moved out of range mid-animation), keep the original
+                    // solution rather than misfiring -- the attack was already committed
+                    if (freshVelocity != Vector3.Zero && freshVelocity.IsValid())
+                    {
+                        launchOrigin = freshOrigin;
+                        launchOrientation = freshOrientation;
+                        launchVelocity = freshVelocity;
+                    }
+                }
+
+                var projectile = LaunchProjectile(launcher, ammo, target, launchOrigin, launchOrientation, launchVelocity);
                 UpdateAmmoAfterLaunch(ammo);
             });
 

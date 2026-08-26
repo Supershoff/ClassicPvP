@@ -100,14 +100,14 @@ namespace ACE.Server.Factories
 
                 // mutate ManaConversionMod
                 var mutationFilter = MutationCache.GetMutation("Casters.caster.txt");
-                mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod);
+                mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod, GetHotDungeonQualityBias(profile));
 
                 // mutate ElementalDamageMod / WieldRequirements
                 var isElemental = wo.W_DamageType != DamageType.Undef;
                 var scriptName = GetCasterScript(isElemental);
 
                 mutationFilter = MutationCache.GetMutation(scriptName);
-                mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod);
+                mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod, GetHotDungeonQualityBias(profile));
 
                 // this part was not handled by mutation filter
                 if (wo.WieldRequirements == WieldRequirement.RawSkill)

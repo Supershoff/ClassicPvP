@@ -341,13 +341,10 @@ ORDER BY discrepancy ASC;
 -- 'Altar They' -- replace the name list (it appears in each query) to reuse.
 --
 -- ADDITIONAL SCHEMA (classicpvp_log session logging; see Database/Base/LogBase.sql):
+--   account_session_log   : accountId, accountName, sessionIP, loginDateTime, logoutDateTime
+--                           (one row per account login/logout session)
 --   character_login_log   : accountId, accountName, characterId, characterName, sessionIP,
---                           loginDateTime, logoutDateTime  (one INSERT per character login;
---                           logoutDateTime UPDATEd on logout). This is the populated source.
---   account_session_log   : same shape at the account level, but NOT currently written by the
---                           server -- do not query it, it is empty. Everything below uses
---                           character_login_log instead. (In AC only one character per account
---                           is online at a time, so per-character rows == per-account sessions.)
+--                           loginDateTime, logoutDateTime  (one row per character login)
 --   classicpvp_auth.account.create_I_P_ntoa / last_Login_I_P_ntoa = readable IP views
 --   classicpvp_auth.account_ip_change_log : per-account IP churn audit
 --
@@ -390,14 +387,13 @@ ORDER BY c.name;
 -- =====================================================================================
 -- QUERY 10 -- Every IP each of the three accounts has ever connected from
 -- -------------------------------------------------------------------------------------
--- Full per-account IP history from the character login log (NOT deduped like the binding
--- table). Counts character logins per IP.
+-- Full per-account IP history from the session log (NOT deduped like the binding table).
 -- =====================================================================================
 SELECT
     s.accountId,
     s.accountName,
     s.sessionIP,
-    COUNT(*)              AS logins,
+    COUNT(*)              AS sessions,
     MIN(s.loginDateTime)  AS first_seen,
     MAX(s.loginDateTime)  AS last_seen
 FROM classicpvp_log.character_login_log s
@@ -405,9 +401,10 @@ WHERE s.accountId IN (
         SELECT c.account_Id FROM classicpvp_shard.`character` c
         WHERE c.name IN ('Altar Boy','Altar Girl','Altar They'))
 GROUP BY s.accountId, s.accountName, s.sessionIP
-ORDER BY s.accountId, logins DESC;
+ORDER BY s.accountId, sessions DESC;
 
 
+SELECT * FROM classicpvp_log.character_login_log
 -- =====================================================================================
 -- QUERY 11 -- IPs shared by 2+ of the three accounts
 -- -------------------------------------------------------------------------------------
@@ -446,15 +443,15 @@ WITH tgt AS (
     WHERE c.name IN ('Altar Boy','Altar Girl','Altar They')
 ),
 sess AS (
-    SELECT s.accountId, s.accountName, s.characterName, s.sessionIP,
+    SELECT s.accountId, s.accountName, s.sessionIP,
            s.loginDateTime                     AS login_at,
            COALESCE(s.logoutDateTime, NOW())   AS logout_at
     FROM classicpvp_log.character_login_log s
         JOIN tgt USING (accountId)
 )
 SELECT
-    a.accountName AS acct_a, a.characterName AS char_a, a.login_at AS a_login, a.logout_at AS a_logout,
-    b.accountName AS acct_b, b.characterName AS char_b, b.login_at AS b_login, b.logout_at AS b_logout,
+    a.accountName AS acct_a, a.login_at AS a_login, a.logout_at AS a_logout,
+    b.accountName AS acct_b, b.login_at AS b_login, b.logout_at AS b_logout,
     (a.sessionIP = b.sessionIP) AS same_ip,
     TIMESTAMPDIFF(SECOND,
         GREATEST(a.login_at, b.login_at),
@@ -483,10 +480,10 @@ sess AS (
     SELECT s.accountId, s.accountName,
            s.loginDateTime                   AS login_at,
            COALESCE(s.logoutDateTime, NOW()) AS logout_at
-    FROM classicpvp_log.character_login_log s
+    FROM classicpvp_log.account_session_log s
         JOIN tgt USING (accountId)
 ),
-overlaps AS (
+OVERLAPS AS (
     SELECT a.accountId,
            SUM(TIMESTAMPDIFF(SECOND,
                 GREATEST(a.login_at, b.login_at),
@@ -515,7 +512,7 @@ SELECT
     ROUND(100 * COALESCE(o.overlap_secs, 0)
                / NULLIF(t.total_secs, 0), 1)          AS pct_time_overlapped
 FROM totals t
-    LEFT JOIN overlaps o ON o.accountId = t.accountId
+    LEFT JOIN OVERLAPS o ON o.accountId = t.accountId
 ORDER BY pct_time_overlapped DESC;
 
 
@@ -526,15 +523,15 @@ ORDER BY pct_time_overlapped DESC;
 --      "launch three clients back to back" fingerprint. Repeated tight clusters = strong.
 -- =====================================================================================
 WITH tgt AS (
-    SELECT s.accountId, s.accountName, s.characterName, s.loginDateTime
-    FROM classicpvp_log.character_login_log s
+    SELECT s.accountId, s.accountName, s.loginDateTime
+    FROM classicpvp_log.account_session_log s
     WHERE s.accountId IN (
         SELECT c.account_Id FROM classicpvp_shard.`character` c
         WHERE c.name IN ('Altar Boy','Altar Girl','Altar They'))
 )
 SELECT
-    a.accountName AS acct_a, a.characterName AS char_a, a.loginDateTime AS login_a,
-    b.accountName AS acct_b, b.characterName AS char_b, b.loginDateTime AS login_b,
+    a.accountName AS acct_a, a.loginDateTime AS login_a,
+    b.accountName AS acct_b, b.loginDateTime AS login_b,
     ABS(TIMESTAMPDIFF(SECOND, a.loginDateTime, b.loginDateTime)) AS secs_apart
 FROM tgt a
     JOIN tgt b
@@ -564,3 +561,57 @@ WHERE a.accountId IN (
 GROUP BY a.accountId, a.accountName, a.create_Time, a.create_I_P_ntoa,
          a.last_Login_I_P_ntoa, a.last_Login_Time, a.total_Times_Logged_In
 ORDER BY a.create_Time;
+
+
+
+/*
+    Look up and clear LS and portal ties to a specific landblock
+*/
+
+SET @lb_lo = 0x02D30000;
+SET @lb_hi = 0x02D3FFFF;
+
+/* ------------------------------------------------------------------ */
+/* 1. Pre-flight report - what is currently tied to this landblock     */
+/* ------------------------------------------------------------------ */
+
+SELECT p.position_Type,
+       CASE p.position_Type
+           WHEN  1 THEN 'Location'
+           WHEN  3 THEN 'Instantiation'
+           WHEN  4 THEN 'Sanctuary (lifestone tie)'
+           WHEN  8 THEN 'LinkedPortalOne (portal tie)'
+           WHEN  9 THEN 'LastPortal (portal recall)'
+           WHEN 12 THEN 'PortalSummonLoc'
+           WHEN 15 THEN 'LinkedLifestone (lifestone tie)'
+           WHEN 16 THEN 'LinkedPortalTwo (portal tie)'
+           ELSE CONCAT('other (', p.position_Type, ')')
+       END AS position_Name,
+       COUNT(*) AS ROW_COUNT
+FROM   biota_properties_position p
+WHERE  p.obj_Cell_Id BETWEEN 0x02D30000 AND 0x02D3FFFF
+GROUP  BY p.position_Type
+ORDER  BY p.position_Type;
+
+/* Named list of affected characters, for the record */
+SELECT c.id AS character_Id, c.name AS character_Name, p.position_Type,
+       HEX(p.obj_Cell_Id) AS cell
+FROM   biota_properties_position p
+JOIN   `character` c ON c.id = p.object_Id
+WHERE  p.obj_Cell_Id BETWEEN 0x02D30000 AND 0x02D3FFFF
+ORDER  BY c.name, p.position_Type;
+
+/* ------------------------------------------------------------------ */
+/* 2. Remove lifestone ties, portal ties and recall targets            */
+/* ------------------------------------------------------------------ */
+
+DELETE FROM biota_properties_position
+WHERE  obj_Cell_Id BETWEEN 0x02D30000 AND 0x02D3FFFF
+AND    position_Type IN (
+           4,   /* Sanctuary        - lifestone tie   */
+          15,   /* LinkedLifestone  - lifestone tie   */
+           8,   /* LinkedPortalOne  - portal tie      */
+          16,   /* LinkedPortalTwo  - portal tie      */
+           9,   /* LastPortal       - portal recall   */
+          12   /* PortalSummonLoc  - summon location */
+       );

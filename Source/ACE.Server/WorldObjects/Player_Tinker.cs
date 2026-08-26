@@ -174,9 +174,12 @@ namespace ACE.Server.WorldObjects
                 new GameMessagePrivateUpdateVital(this, Mana));
 
             // --- Tinkering Trinket ---
-            // Ensure the character has a Tinkering Trinket carrying the Major cantrips. Upgrade any
-            // trinkets they already hold (inventory or equipped) in place; only grant a fresh one if
-            // none exist. This lets a pre-existing Tinker repair a trinket that predates the cantrips.
+            // Ensure the character has a Tinkering Trinket carrying the Major cantrips and Brilliance.
+            // Upgrade any trinkets they already hold (inventory or equipped) in place; only grant a
+            // fresh one if none exist. This lets a pre-existing Tinker repair a trinket that predates
+            // spells later added to the weenie's spell book (cantrips, Brilliance, etc.) — those items
+            // had their spell book baked in at creation and won't pick up weenie template changes on
+            // their own.
             var trinkets = GetInventoryItemsOfWCID(TinkeringTrinketWcid) ?? new List<WorldObject>();
             foreach (var equipped in EquippedObjects.Values)
             {
@@ -189,7 +192,7 @@ namespace ACE.Server.WorldObjects
                 var trinket = WorldObjectFactory.CreateNewWorldObject(TinkeringTrinketWcid);
                 if (trinket != null)
                 {
-                    AddTrinketCantrips(trinket);
+                    BackfillTrinketSpells(trinket);
                     TryCreateInInventoryWithNetworking(trinket);
                 }
             }
@@ -197,7 +200,7 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var trinket in trinkets)
                 {
-                    AddTrinketCantrips(trinket);
+                    BackfillTrinketSpells(trinket);
                     trinket.SaveBiotaToDatabase();
                 }
             }
@@ -205,8 +208,8 @@ namespace ACE.Server.WorldObjects
             if (wasAlreadyTinker)
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    "Your Tinker designation has been refreshed. Arcane Lore is now specialized and maxed, and your Tinkering Trinket has been upgraded with Major cantrips. " +
-                    "If the trinket is equipped, re-equip it (or log out and back in) to apply the new cantrips.",
+                    "Your Tinker designation has been refreshed. Arcane Lore is now specialized and maxed, and your Tinkering Trinket has been upgraded with Major cantrips and Brilliance. " +
+                    "If the trinket is equipped, re-equip it (or log out and back in) to apply the new buffs.",
                     ChatMessageType.Broadcast));
             }
             else
@@ -219,13 +222,16 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Adds the Major attribute and tinkering-skill cantrips to a Tinkering Trinket instance.
-        /// Idempotent: GetOrAddKnownSpell will not create duplicate entries.
+        /// Adds the Major attribute and tinkering-skill cantrips, plus Brilliance, to a Tinkering
+        /// Trinket instance. Idempotent: GetOrAddKnownSpell will not create duplicate entries, so this
+        /// is safe to call on a trinket that already has some or all of these.
         /// </summary>
-        private void AddTrinketCantrips(WorldObject trinket)
+        private void BackfillTrinketSpells(WorldObject trinket)
         {
             foreach (var cantrip in TinkerTrinketCantrips)
                 trinket.Biota.GetOrAddKnownSpell((int)cantrip, trinket.BiotaDatabaseLock, out _);
+
+            trinket.Biota.GetOrAddKnownSpell((int)SpellId.BrillianceOther, trinket.BiotaDatabaseLock, out _);
         }
     }
 }

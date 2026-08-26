@@ -960,6 +960,7 @@ namespace ACE.Server.WorldObjects
                     QuestManager.Erase("AttributeLoweringGemPickedUp");
                     QuestManager.Erase("AttributeRaisingGemPickedUp");
                     QuestManager.Erase("SkillAlterationGemPickedUp");
+                    QuestManager.Erase("CombatSkillAlterationGemPickedUp");
                 }
             });
             actionChain.EnqueueChain();

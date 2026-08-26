@@ -5798,6 +5798,90 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("arenatesttarget", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Flags a player so damage dealt to them uses the arena damage configs anywhere in the world",
+            "Usage: /arenatesttarget [on|off] [characterName]\n" +
+            "Testing aid: while flagged, every damage calculation against that player reads the\n" +
+            "pvp_dmg_mod_arena_* configs instead of the global pvp_dmg_mod_* ones, exactly as if\n" +
+            "they were standing in an arena landblock. It does not join them to an arena event.\n" +
+            "Omit the character name to target yourself. Omit on/off to show the current setting.\n" +
+            "Use /arenatesttarget list to see every online player currently flagged.")]
+        public static void HandleArenaTestTarget(Session session, params string[] parameters)
+        {
+            try
+            {
+                // /arenatesttarget list
+                if (parameters.Length == 1 && parameters[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+                {
+                    var flagged = PlayerManager.GetAllOnline().Where(p => p.ArenaTestTarget).ToList();
+                    if (flagged.Count == 0)
+                        CommandHandlerHelper.WriteOutputInfo(session, "No online players are flagged as an arena test target.");
+                    else
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Arena test targets online ({flagged.Count}): {string.Join(", ", flagged.Select(p => p.Name))}");
+                    return;
+                }
+
+                var toggle = (string)null;
+                var playerName = string.Empty;
+
+                if (parameters.Length > 0 &&
+                    (parameters[0].Equals("on", StringComparison.OrdinalIgnoreCase) || parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase)))
+                {
+                    toggle = parameters[0].ToLowerInvariant();
+                    playerName = string.Join(" ", parameters.Skip(1));
+                }
+                else
+                {
+                    // no on/off given — the whole argument (if any) is the character name
+                    playerName = string.Join(" ", parameters);
+                }
+
+                // The flag is read off the live Player during damage calculation, so the target
+                // has to be online for it to mean anything.
+                var target = string.IsNullOrWhiteSpace(playerName) ? session?.Player : PlayerManager.GetOnlinePlayer(playerName);
+                if (target == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, string.IsNullOrWhiteSpace(playerName)
+                        ? "No target. Run this from a logged-in character or pass a character name."
+                        : $"No online player found with name = {playerName}. The target must be online.");
+                    return;
+                }
+
+                if (toggle == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{target.Name} arena test target: {(target.ArenaTestTarget ? "ON" : "OFF")}");
+                    return;
+                }
+
+                var enable = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
+                if (target.ArenaTestTarget == enable)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{target.Name} is already flagged {(enable ? "ON" : "OFF")} as an arena test target.");
+                    return;
+                }
+
+                target.ArenaTestTarget = enable;
+
+                CommandHandlerHelper.WriteOutputInfo(session, enable
+                    ? $"{target.Name} is now an arena test target — damage dealt to them will use the pvp_dmg_mod_arena_* configs anywhere in the world. Remember to turn this off when finished."
+                    : $"{target.Name} is no longer an arena test target — damage dealt to them uses the normal pvp_dmg_mod_* configs again.");
+
+                if (target != session?.Player)
+                {
+                    target.Session?.Network.EnqueueSend(new GameMessageSystemChat(enable
+                        ? "You have been flagged as an arena damage test target."
+                        : "You are no longer an arena damage test target.", ChatMessageType.Broadcast));
+                }
+
+                PlayerManager.BroadcastToAuditChannel(session?.Player,
+                    $"{session?.Player?.Name ?? "CONSOLE"} set ArenaTestTarget={enable} on {target.Name}");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error in AdminCommands.HandleArenaTestTarget. ex: {ex}");
+            }
+        }
+
         #endregion Arena Admin Commands
 
         #region Allegiance Whitelist Commands

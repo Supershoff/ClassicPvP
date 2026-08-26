@@ -1158,6 +1158,17 @@ namespace ACE.Server.WorldObjects
 
         public bool PKLogoutActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PKLogoffTimer.TotalSeconds;
 
+        /// <summary>
+        /// TRUE if the player is standing in an active Hot Dungeon (and the feature is enabled).
+        /// When true, logging out is delayed with a pending-logout timer, exactly like a PK logout.
+        /// This only affects the LogOut path — recalls (portal, lifestone recall spells, /lifestone, etc.)
+        /// are intentionally unaffected.
+        /// </summary>
+        public bool HotDungeonLogoutActive =>
+            PropertyManager.GetBool("hot_dungeon_logout_timer").Item &&
+            Location != null &&
+            HotDungeonManager.IsHotDungeon(Location.LandblockId.Landblock, out _);
+
         public bool IsPKType => PlayerKillerStatus == PlayerKillerStatus.PK || PlayerKillerStatus == PlayerKillerStatus.PKLite;
 
         public bool IsPK => PlayerKillerStatus == PlayerKillerStatus.PK;

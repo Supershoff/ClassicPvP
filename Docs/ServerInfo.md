@@ -207,6 +207,29 @@ For **every hometown your allegiance owns**, all experience you earn is boosted 
 
 This applies to **all XP sources**: monster kills, quest turn-ins, exploration, and open-world PK kills. The bonus is shared by the entire allegiance — every member benefits from the allegiance's combined holdings, regardless of who captured each town. Own more towns, level faster.
 
+### 🚀 Catch-Up XP Boost
+
+Falling behind the season cap — because you started late, rolled a new character, or simply had a quiet couple of weeks — comes with a built-in correction. While your **total XP is below 70% of the current season XP cap**, all the XP you earn is multiplied, and the size of the multiplier depends on how far behind you are.
+
+| Your total XP vs. the cap | XP boost |
+|---|---|
+| 0% (brand new character) | **5.00×** |
+| 17.5% | 4.25× |
+| 35% | 3.50× |
+| 52.5% | 2.75× |
+| Just under 70% | **2.00×** |
+| 70% or above | 1.00× (no boost) |
+
+The multiplier is a straight line between those two endpoints, recalculated from your exact position, so it tapers naturally as you close the gap rather than dropping in steps. At 70% of the cap the boost switches off entirely — at that point you've caught up.
+
+Because the cap itself climbs every day, the threshold moves with it. Standing still while the cap advances will eventually put you back under 70% and re-enable the boost.
+
+**It stacks multiplicatively** with the rolling XP rate and the hometown ownership bonus. A brand-new character grinding late in the season, when the rate is at 3×, earns at 15×.
+
+**It does not raise your ceiling.** Boosted XP still counts against the global cap and against your Monster / Quest / PK budgets — the boost gets you to those limits faster, it doesn't lift them.
+
+**Fellowship note:** XP shared through a fellowship is boosted by the **earner's** catch-up multiplier before it is split, not each member's own. Fellowship with someone who is also behind and you both benefit; fellowship with a maxed player and their kills come to you unboosted.
+
 ---
 
 ## ⏱️ XP Cap Categories
@@ -249,6 +272,7 @@ Use `/season status` to see a live snapshot of the current season:
 - **Level cap** — the current maximum level (or "post-cap XP grind" once level 126 is reached)
 - **XP cap** — the exact total-XP ceiling in effect right now
 - **Next advance** — hours and minutes until the cap ticks up again
+- **Catch-Up** — your current catch-up XP multiplier, or `none` once you're at or above 70% of the cap
 - **XP budgets** — your Monster, Quest, and PK XP earned vs. your budget for this window, with a percentage and a `[FULL]` indicator when a bucket is exhausted
 
 ---
@@ -288,9 +312,7 @@ This reflects the behavior patched into the live servers on **January 12, 2004**
 
 You can swear allegiance to another character on your own account using the `/OfflineSwear <CharacterName>` command. Because you cannot have two characters logged in simultaneously, the target must be offline.
 
-All normal allegiance rules apply — the target must be higher or equal level, must not already be your vassal, and the account-wide allegiance lock still applies (both characters must end up in the same monarch's chain).
-
-`/OfflineSwear` is **exempt from the swear cooldown**: it never starts a cooldown and is never blocked by one, so you can freely organize your own account's characters into a chain at any time.
+All normal allegiance rules apply — the target must be higher or equal level, must not already be your vassal, the account-wide allegiance lock still applies (both characters must end up in the same monarch's chain), and the **PK-trophy swear cost applies exactly as it does for a normal swear** (see below). Swearing with `/OfflineSwear` counts as one of that character's swears.
 
 ---
 
@@ -302,23 +324,36 @@ ClassicPvP enforces rules around allegiance oaths to prevent abuse and kill-trad
 
 All characters on a single account must belong to the **same monarch's allegiance**. Once any character on your account has sworn to an allegiance, your other characters can only swear to someone within that same chain. Attempting to swear into a different allegiance will be blocked.
 
-### Swear Cooldown
+### Swear Cost (PK Trophies)
 
-After swearing allegiance, a **7-day cooldown** applies before you can swear again.
+Swearing allegiance costs **PK trophies**, on a per-character count that only ever goes up:
 
-- Your **first oath ever** is free — no cooldown is set.
-- **Re-arranging your own chain is free (three times).** You may break and swear back into the **same allegiance** — for example, swearing under a different patron beneath the same monarch — up to **three times** without triggering the cooldown. Once those three are used up, the normal cooldown applies. Genuinely swearing into a **different** allegiance still costs the cooldown, and doing so refreshes your three free re-swears for the new allegiance.
-- The cooldown applies to voluntary changes only. If your patron or someone above them in the chain **breaks their oath**, causing you to be broken from your allegiance involuntarily, you can re-swear back into the **original allegiance chain** without waiting.
-- If your **monarch moves their entire allegiance** by swearing to a new patron, that is their oath change — your relationship to your own patron is unchanged and no cooldown is triggered for you.
-- Swearing to a character on your **own account** with `/OfflineSwear` never counts against the cooldown (see [above](#-swearing-allegiance-to-same-account-characters)).
+- Your **first 3 swears are free**.
+- After that, each swear costs PK trophies on a steeply rising scale — **100** for the 4th, climbing to a maximum of **10,000** by the 15th swear:
 
-### Break Cascade & Account Protection
+| Swear # | Cost |
+|--------:|-----:|
+| 1–3 | Free |
+| 4 | 100 |
+| 5 | 151 |
+| 6 | 231 |
+| 7 | 351 |
+| 8 | 533 |
+| 9 | 811 |
+| 10 | 1,232 |
+| 11 | 1,873 |
+| 12 | 2,848 |
+| 13 | 4,328 |
+| 14 | 6,579 |
+| 15+ | 10,000 |
 
-If someone above you in the chain breaks and it would leave your account with characters in two different allegiances, the server automatically breaks the affected character from their patron.
+The trophies are taken from your inventory when the oath is accepted. The count is **per character and lifetime** — it never resets, so repeatedly hopping allegiances gets expensive fast. Swearing to your own alt with `/OfflineSwear` costs the same and counts the same.
 
-When this cascade propagates downward:
-- Characters sworn to another character **on the same account** as their patron are **not broken** from that bond — the same-account relationship is preserved.
-- The cascade continues through them, severing any **different-account** vassals further down the chain.
+> **For admins:** the free-swear count and cost curve are set by `allegiance_free_swears` (default 3), `allegiance_swear_base_cost` (default 100), and `allegiance_swear_max_cost` (default 10000). The cost ramps from the base to the cap over 12 paid swears — with 3 free swears, the cap is reached at the 15th swear.
+
+### What Happens to Your Vassals When You Leave
+
+When you **break** from your allegiance or are **kicked or booted**, your **direct vassals are released** — each becomes their own monarch and keeps their own sub-vassals — and you are left with no allegiance. This only goes **one level deep**: your vassals' vassals stay sworn to your vassals and move with them into their new allegiance.
 
 ### Allegiance-Mate Alt Rewards
 
@@ -362,6 +397,8 @@ Use the `/arena` command to interact with the queue.
 - Must be **Player Killer (PK)** status
 - Must **not** be PK-tagged (no active PK timer from a recent kill)
 
+**You don't find out who you're fighting until the match starts.** From the moment you're matched through the teleport-in countdown, `/arena info` shows only how many players are in the match, not their names — and pending matches cannot be watched with `/arena watch`. The names appear once the match actually begins. This is deliberate: knowing your draw early made it possible to duck a bad one by logging off or PK-tagging yourself, which cancels the match before it starts and so never counted as a disqualification.
+
 ### Arena Types
 
 | Type | Format |
@@ -391,7 +428,9 @@ Arenas run under specific combat restrictions that do not apply in the open worl
 | **2v2** | 15% | 5 | 1 | 1 |
 | **FFA** | 35% | 5 | 3 | 5 |
 | **Tugak** | 35% | 5 | 3 | 5 |
-| **Group** | 30% (60% on a clean 1st-place win) | 5 per member | 1 per member | 2 per member |
+| **Group** | 30% (60% on a clean 1st-place win) | 5 per member (15 on a clean 1st-place win) | 1 per member (3 on a clean 1st-place win) | 2 per member (6 on a clean 1st-place win) |
+
+A "clean 1st-place win" means your team placed 1st **and** the match wasn't against your own allegiance — same-allegiance group matches never get the 3× bonus, even on a win.
 
 - Arena XP counts against your **PvP daily bucket**.
 - Eliminated players should stay online until the match ends to be eligible for rewards.
@@ -418,29 +457,41 @@ Town Control kill quests (PKKILL_TC_1/5/30) have been disabled and no longer app
 
 Each arena format has its own leaderboard, all viewable with `/arena rank <type>`.
 
-#### 1v1 — Composite Score
-1v1 uses a **composite score** rather than raw ELO, designed to reward players who stay active rather than those who grind a good rating and stop queueing to protect it.
-
-**Your score = ELO + (Wins × 8) + (Matches Played × 2)**
+#### 1v1 — ELO Rating
+**Your score is your ELO rating, nothing else.** Wins and matches played no longer add anything on top — staying active is rewarded through decay instead, which is what separates a player who defends their rating from one who grinds it up and stops queueing.
 
 - **ELO** updates after every match based on the rating difference between you and your opponent. Starting ELO is 1500.
-- **ELO decay** — if you stop playing, your ELO drops **3% per day** once you've gone **3 or more consecutive days without a 1v1 match**, floored at 1500. Decay is written directly to the database each day, so the stored ELO is always your current effective rating. Playing a 2v2 does **not** stop your 1v1 decay clock — each format is tracked independently.
-- **Win bonus (+8 per win)** and **match bonus (+2 per match played)** mean an active player with a slightly lower ELO can outrank an inactive player with a higher one.
+- **ELO decay** runs once a day, and how hard it hits depends on **how many 1v1 matches you completed in the last 7 days**:
+
+| 1v1 matches in the last 7 days | Daily decay |
+|---|---|
+| None at all | **5%** |
+| 1 – 2 | **3%** |
+| 3 – 9 | **1%** |
+| 10 or more | **none** |
+
+- Decay only touches the part of your rating **above 1500**, never the whole thing. At 1800 with no matches all week, the 5% comes off the 300 points above baseline — you lose 15, not 90. No amount of decay drops you below 1500.
+- Only **1v1** matches count toward your 1v1 tier. Playing 2v2 or FFA does not slow your 1v1 decay — each format is tracked independently.
+- Decay is written directly to the database each day, so the stored ELO is always your current effective rating.
 
 Use `/arena rank 1v1` to see the leaderboard.
 
 #### 2v2 — Individual + Team Rankings
 2v2 tracks two separate leaderboards:
 
-**Individual** — same composite formula as 1v1, plus a **survival bonus**:
-- **+30 per match where you were not eliminated** as part of the winning team
-- Score = ELO + (Wins × 8) + (Matches × 2) + (Times Survived × 30)
-- Decay rules are the same: 3% per day after a 3-day grace period, tracked separately from your 1v1 rating
+**Individual** — your score is your 2v2 ELO rating, same as 1v1. Decay works the same way but is **gentler**, because 2v2 needs a partner to be online and draws fewer players:
 
-**Team pairs** — your performance as a specific two-player combination is tracked separately. A team's score uses the same composite formula, with the team's ELO based on the average of both players' individual ELOs at match time.
+| 2v2 matches in the last 7 days | Daily decay |
+|---|---|
+| None at all | **3%** |
+| 1 – 2 | **1%** |
+| 3 or more | **none** |
+
+As in 1v1, decay applies only to the portion above 1500, and only 2v2 matches count toward your 2v2 tier.
+
+**Team pairs** — your performance as a specific two-player combination is tracked separately. A team's score is the team's ELO, based on the average of both players' individual ELOs at match time.
 - Winning teams gain ELO; losing teams lose ELO
-- Team ELO also decays if the pair goes inactive; playing with a different partner does not stop the decay clock for this pair
-- Survival bonus also applies at the team level
+- **Team ratings never decay** — a pair that stops playing together keeps its rating
 
 Use `/arena rank 2v2` for individual standings, `/arena rank 2v2team` for team pair standings.
 
@@ -587,8 +638,8 @@ ClassicPvP tracks a **Season leaderboard** across 12 categories spanning both ar
 #### Arena
 | Category | What It Ranks |
 |---|---|
-| **1v1 Arena** | Composite score (ELO + wins + matches) |
-| **2v2 Arena** | Composite score (ELO + wins + matches + survival bonus) |
+| **1v1 Arena** | 1v1 ELO rating |
+| **2v2 Arena** | 2v2 ELO rating |
 | **FFA Arena** | Lifetime placement points across all FFA events |
 | **Tugak Arena** | Lifetime placement points across all Tugak events |
 | **Group Arena** | Total Group arena wins |
@@ -697,13 +748,31 @@ Each dungeon in the pool has a **level bracket** (minimum and maximum server lev
 | **Double Loot** | Monster corpses receive two independent loot rolls, effectively doubling item generation. |
 | **A Box** | Each monster kill has a per-dungeon configurable chance to drop **A Box** on the corpse. |
 | **Salvage Bonus** | Salvaging items while standing inside a Hot Dungeon yields **double the material** (2× units). Applies to whatever you salvage there, regardless of where the items were looted. |
+| **Loot Quality** | Weapons rolled inside a Hot Dungeon have a small chance to come out at the best value available for their wield requirement (the wield requirement itself is unchanged). Each of a weapon's damage stats is rolled separately, so a weapon may upgrade one, all, or none of them: damage and damage variance on melee and thrown, damage mod and elemental damage bonus on bows, crossbows and atlatls, and elemental damage mod and mana conversion on casters. |
+| **Loot Mix** | Armor drops lean toward single-slot pieces (helms, breastplates, girths, gauntlets, pauldrons, tassets, bracers, sollerets, shields) over multi-slot pieces. Weapons replace some low-value filler, and most mundane clutter is replaced with equipment. The number of items dropped is unchanged. |
 | **PK Rewards** | When a PK kill occurs inside a Hot Dungeon between players of **different allegiances**, the victim's corpse will contain a **Phial of Bloody Tears** and **A Box**. |
+
+### Logout Delay in Hot Dungeons
+
+The extra rewards come with extra risk. While you are standing inside an active Hot Dungeon, **logging out is delayed** — the same pending-logout timer that applies to Player Killers now applies to everyone. When you log out, your character stays frozen in the world for a short time before actually leaving, so you can't instantly escape a dangerous situation by quitting.
+
+**Recalls are not affected.** Portal recall, lifestone recall spells, and recall chat commands like `/lifestone` all work normally — this only delays a straight logout.
 
 ### Zerg Control in Hot Dungeons
 
 While a dungeon is Hot, it becomes a **zerg-controlled area** — each allegiance is capped at **9 players** inside at the same time. If a 10th member of your allegiance tries to enter, they will be blocked. If you're already inside and a 10th member slips in, the most recently teleported players will be booted to their lifestone automatically.
 
 This mechanic prevents large allegiances from overwhelming a Hot Dungeon and ensures smaller groups have a fair chance at the bosses and loot.
+
+---
+
+## 🔩 Abandoned Mine (Subway)
+
+The Abandoned Mine — home to Darkbeat and Anti Parazi — has its own standing access restrictions, separate from the Hot Dungeon zerg-control rules above.
+
+- **PK only.** You must be **Player Killer (PK)** status to enter.
+- **No recall or summon.** The portal cannot be reached via recall or summoning — you have to walk through it directly.
+- **Permanent zerg control.** The Abandoned Mine is always a zerg-controlled area, capped at **5 players per allegiance** at the same time.
 
 ---
 
@@ -723,27 +792,30 @@ Any allegiance member can walk up to a **Bind Stone** in an unowned town and use
 
 To take a town owned by a rival allegiance, use the Bind Stone to begin the assault.
 
-**Phase 1 — Perimeter Control (up to 60 minutes)**
-- Phase 1 begins **automatically** when at least **2 members** of a single attacking allegiance are within **5 meters** of the Bind Stone and no other enemy allegiances are within **50 meters** — no player action required
-- If an enemy PK enters within 50 meters, a warning is broadcast. If they remain for **30 continuous seconds**, Phase 1 progress resets. Leaving the area before 30 seconds have passed cancels the threat with no penalty.
+**Phase 1 — Perimeter Control (up to 60 minutes), at the town Bind Stone**
+- Phase 1 begins **automatically** when at least **2 members** of a single attacking allegiance are within **5 meters** of the Bind Stone and no other enemy allegiances are within **10 meters** — no player action required
+- If an enemy PK enters within 10 meters, a warning is broadcast. If they remain for **30 continuous seconds**, Phase 1 progress resets. Leaving the area before 30 seconds have passed cancels the threat with no penalty.
 - Hold the zone for **4 uninterrupted minutes** to trigger Phase 2
 - Failing to reach Phase 2 within 60 minutes announces a global failure and applies a **3-hour cooldown** on that town for your allegiance
 
-**Phase 2 — Destroy the Bind Stone (30 minutes)**
+**Phase 2 — Destroy the Bind Stone (30 minutes), inside the town's Meeting Hall**
+- When Phase 1 completes, the outdoor Bind Stone goes dark and the fight **moves into the town's Meeting Hall**. Take the Meeting Hall portal in — that is where the attackable Bind Stone appears
+- **The Meeting Hall portal ignores the PK timer while Phase 2 is running**, so neither side can be locked out of the fight by being tagged on repeat. Outside Phase 2 the normal PK timer applies
+- **Meeting Halls are permanently zerg-controlled** — each allegiance is capped at **7 players** inside a hall at the same time, whether or not a conflict is live. An 8th member is blocked at the portal, and if one slips in, the most recently teleported players are booted to their lifestone. Each hall has its own independent cap
 - The Bind Stone becomes attackable — chip down its HP with melee, missile, or war magic
-- Breaching Phase 2 immediately awards each attacking-allegiance member near the stone **5 PK Trophies**
+- Breaching Phase 2 immediately awards each attacking-allegiance member near the outdoor stone **5 PK Trophies**
 - **All damage types are equal** — no element (slashing, fire, cold, etc.) is more or less effective than another, for both physical and magic
 - **Melee and missile damage is reduced** so that a weapon user's DPS stays in line with a mage's, rather than vastly outpacing it. War magic is unaffected
 - **Damage falls off with distance** — attacks deal full damage within **15 meters** of the Bind Stone, taper off beyond that, and deal **nothing past 20 meters**. You must fight up close to bring it down
-- **You must clear the defenders off the stone to damage it.** While **any player who is not in the attacking allegiance** is within **100 meters** of the Bind Stone, all attacker damage to it is **reduced by 90%**. Standing next to defenders and burning the stone anyway ("peacing" past them) doesn't work — you have to drive them out of the area first
+- **You must clear the defenders out of the hall to damage it.** While **any player who is not in the attacking allegiance** is anywhere inside the Meeting Hall, all attacker damage to the stone is **reduced by 90%**. Standing next to defenders and burning the stone anyway ("peacing" past them) doesn't work — you have to drive them out of the hall first
 - **Defenders can mend the stone.** A defending-allegiance member who attacks their own Bind Stone doesn't damage it — instead they **heal it by 10%** of the damage they would have dealt
 - Bind Stone HP scales with the current rolling level cap
-- Each kill on the defending allegiance in the combat zone deals **5% max HP** bonus damage to the Bind Stone
-- Each kill on the attacking allegiance in the combat zone **heals the Bind Stone** by 5% max HP
-- **Both sides earn PK Trophies for holding the area.** While within **50 meters** of the Bind Stone during Phase 2, attackers and defenders each receive **1 PK Trophy per minute** of participation
-- **Repelled attack** — if the defenders hold the Bind Stone with **at least 2 defenders and no non-defenders within 50 meters for 10 continuous minutes**, Phase 2 ends early as a repelled attack: **Defenders win** and receive the defense rewards. Any non-defender — an attacker *or* a neutral third party — within 50 meters resets the repel timer
+- Each kill on the defending allegiance **inside the Meeting Hall** deals **5% max HP** bonus damage to the Bind Stone
+- Each kill on the attacking allegiance **inside the Meeting Hall** **heals the Bind Stone** by 5% max HP
+- **Both sides earn PK Trophies for holding the hall.** While inside the Meeting Hall during Phase 2, attackers and defenders each receive **1 PK Trophy per minute** of participation
+- **Repelled attack** — if the defenders hold the hall with **at least 2 defenders and no non-defenders inside it for 10 continuous minutes**, Phase 2 ends early as a repelled attack: **Defenders win** and receive the defense rewards. Any non-defender — an attacker *or* a neutral third party — entering the hall resets the repel timer
 - Destroy the Bind Stone within 30 minutes → **Attackers win**
-- Survive 30 minutes with the Bind Stone intact → **Defenders win**; the Bind Stone heals and becomes unattackable again
+- Survive 30 minutes with the Bind Stone intact → **Defenders win**; the outdoor Bind Stone returns and becomes unattackable again
 
 Two allegiances cannot attack the same town simultaneously. An allegiance can maintain at most **2 active assaults** at once.
 
@@ -757,7 +829,7 @@ Two allegiances cannot attack the same town simultaneously. An allegiance can ma
 
 ### Rewards
 
-Winners within **100 meters of the Bind Stone** (on the town landblock or an adjacent one) at the moment of resolution share the rewards. **Defenders are rewarded more generously than attackers** — attackers already gain the town itself on a successful capture, so holding a town pays out the larger loot:
+Winners **inside the Meeting Hall** at the moment of resolution share the rewards. **Defenders are rewarded more generously than attackers** — attackers already gain the town itself on a successful capture, so holding a town pays out the larger loot:
 
 | Reward | Attackers (capture) | Defenders (hold) |
 |---|---|---|
@@ -767,7 +839,7 @@ Winners within **100 meters of the Bind Stone** (on the town landblock or an adj
 | Phials of Bloody Tears (per player) | — | 1 |
 | Darkbeat Keys (per player) | — | 2 |
 
-Losing allegiance PKs within **100 meters of the Bind Stone** at the moment of resolution are **smited**.
+Losing allegiance PKs **inside the Meeting Hall** at the moment of resolution are **smited**.
 
 ### Using the Bind Stone
 
@@ -834,6 +906,52 @@ The count includes you, and it is your own allegiance's online headcount that ma
 
 ---
 
+## 🔄 Respeccing Skills & Attributes
+
+Skills and attributes are changed with **gems** picked up from the **Temple of Enlightenment** (raise / specialize) and the **Temple of Forgetfulness** (lower / unspecialize). The gems themselves are free — what limits you is a **pickup timer** stamped on your character when you take one.
+
+There are now **three independent timers**. They do not share a cooldown with each other, so using one does not delay the others.
+
+| Gem group | Allowance | Timer |
+|-----------|-----------|-------|
+| **Combat skill gems** — Enlightenment & Forgetfulness | **3 gems per window** | **7 days** |
+| **Non-combat skill gems** — currently Cooking | 1 gem | 14 days |
+| **Attribute gems** — Gem of Raising / Gem of Lowering | 1 of each | 14 days |
+
+### Combat Skill Gems — 3 Every 7 Days
+
+The combat skill gems cover **Axe, Bow, Crossbow, Dagger, Mace, Spear, Staff, Sword, Thrown Weapon, Unarmed Combat, War Magic and Life Magic**, in both Enlightenment and Forgetfulness flavors.
+
+All 12 skills and both flavors draw from the **same pool of 3**. It doesn't matter how you spend them — three Forgetfulness gems, three Enlightenment gems, or any mix across any combat skills. A full unspec-and-respec of one skill costs you two of the three.
+
+**The 7-day clock starts on your first pickup, not your last.** Take one gem on Monday and you have until the following Monday to take the other two, whichever days you like. When that window closes the allowance resets to 3 and the next gem you take opens a fresh window.
+
+If you try to take a fourth gem inside the window, the game tells you how long remains before the window rolls over.
+
+### Non-Combat Skill and Attribute Gems
+
+These are unchanged: **one pickup every 14 days**, each on its own timer. The **Cooking Gem of Enlightenment** is the only non-combat skill gem currently in use.
+
+Attribute gems work in pairs — a **Gem of Raising** and a **Gem of Lowering** are combined to transfer up to **10 points** from one attribute to another. Raising and Lowering are tracked separately, so a full transfer needs one pickup from each.
+
+### Skipping the Wait
+
+The **Skill and Attribute Reset Gem**, sold by **Darkbeat** for **20 Phials of Bloody Tears**, clears **all** of your respec pickup timers at once — combat, non-combat and attribute alike — letting you go straight back to the temples.
+
+On top of the phial cost it consumes **PK Trophies**, and that price **escalates every time you use one**: 100 for your first, then 35% more each time, capped at 10,000.
+
+| Use # | PK Trophies |
+|-------|-------------|
+| 1st | 100 |
+| 2nd | 135 |
+| 3rd | 182 |
+| 4th | 246 |
+| 5th | 332 |
+
+The escalation is permanent and per character — it never decays back down.
+
+---
+
 ## 🛒 Vendors
 
 ### Darkbeat
@@ -844,12 +962,16 @@ The count includes you, and it is your own allegiance's online headcount that ma
 |------|--------------|-------------|
 | Imbue Altering Morph Gem | 20 | Randomizes a weapon's imbue between Crippling Blow, Armor Rending, and Critical Strike. |
 | Empyrean Tuning Fork | 25 | Randomizes the legendary cantrips on armor, jewelry, or shields that already have legendaries. One use per item. |
+| Fetish of the Dark Idols | 25 | Combine with a loot-generated atlatl, bow, or crossbow to add a Magic Absorbing property at the cost of a Melee Defense penalty. The weapon can be imbued before the Fetish is applied, but not after; non-imbue tinkers work either way. |
 | Slayer Upgrade Gem | 25 | Upgrades an existing slayer damage bonus to 1.8 on weapons that rolled a slayer via the tinkering lottery. |
+| Racial Requirement Morph Gem | 30 | Strips the racial requirement off armor, a weapon, or a caster — both the racial activation requirement on its spells and any racial wield requirement. The item is left with no racial restriction at all. |
+| Allegiance Rank Requirement Morph Gem | 30 | Removes the allegiance rank needed to activate an item's spells ("Activation requires allegiance rank 6"), leaving it with no rank requirement. Unlike Silk tinkering, it does not consume a tinker and does not raise the item's Arcane Lore requirement. |
+| Lesser Impenetrability Morph Gem | 30 | Adds Impenetrability to loot-gen or rare armor: 3% Major, 97% Minor. Repeatable on the same piece — on armor that already has Minor, each use is a 3% roll to upgrade it to Major. Will not apply to armor that already has Major or better. |
 | Ancient Bottle | 50 | Absorbs 25% of PvP XP overflow up to 100M. Bonded & Attuned. |
 | Ancient Empyrean Tool | 75 | Guarantees the next tinker will not fail. |
 | Empyrean Jeweler's Sawblade | 50 | Randomizes the slot of a ring, bracelet, or necklace between finger, wrist, and neck. |
 | Oil of Creature Slaying | 75 | Adds a random slayer (1.8 damage bonus) to a weapon or magic caster that does not already have one. |
-| Skill and Attribute Reset Gem | 50 | Clears quest stamps for the Temple of Enlightenment and Temple of Forgetfulness. Each use costs an escalating number of PK Trophies (see below). Bonded & Attuned. |
+| Skill and Attribute Reset Gem | 20 | Clears quest stamps for the Temple of Enlightenment and Temple of Forgetfulness. Each use costs an escalating number of PK Trophies (see below). Bonded & Attuned. |
 
 ---
 
@@ -866,13 +988,13 @@ The count includes you, and it is your own allegiance's online headcount that ma
 | Missile Defense Requirement Morph Gem | 400 | Removes an item's Missile Defense requirement — both the activation requirement and any Missile Defense wield requirement. |
 | Melee Defense Requirement Morph Gem | 400 | Removes an item's Melee Defense requirement — both the activation requirement and any Melee Defense wield requirement. |
 | Player Wield Requirement Morph Gem | 500 | Removes the wield restriction binding an item to a specific player. |
-| Slayer Morph Gem | 100 | Randomizes the creature-slayer type on a loot-gen weapon or caster that already has a slayer, or on loot-gen armor with a Creature Slayer Rating. |
-| Creature Resistance Morph Gem | 100 | Randomizes the creature-resistance type on loot-gen armor/jewelry that has a Creature Resist Rating. |
+| Slayer Morph Gem | 35 | Randomizes the creature-slayer type on a loot-gen weapon or caster that already has a slayer, or on loot-gen armor with a Creature Slayer Rating. |
+| Creature Resistance Morph Gem | 25 | Randomizes the creature-resistance type on loot-gen armor/jewelry that has a Creature Resist Rating. |
 | A Dick (Vitae Removal) | 1 | Eat it to remove your Vitae penalty (no XP granted). Does nothing if you have no penalty. |
 
 > **Level Requirement Removal Morph Gem** has been discontinued — no item in the Infiltration era has a level requirement, so it never had a use.
 
-> **Impenetrability Morph Gem** — not sold by either vendor. Obtainable only from **Mythic Mystery Boxes**.
+> **Impenetrability Morph Gem** — not sold by either vendor. Obtainable only from **Mythic Mystery Boxes**. It adds Impenetrability to loot-gen or rare armor at **33% Major / 67% Minor**, and will not apply to armor that already has any Impenetrability cantrip. The **Lesser Impenetrability Morph Gem** (Darkbeat, Rare Mystery Box) is the repeatable, lower-odds alternative.
 
 **Vitae Removal.** Anti Parazi also stocks **A Dick**, a consumable that costs **1 PK Trophy**. Eat it to clear your **Vitae penalty** — no XP is granted, it just removes the penalty. If you have no Vitae penalty, eating it does nothing and the item is not consumed.
 
@@ -886,9 +1008,25 @@ Spend PK Trophies to give your character a **custom title**. Use `/BuyTitle <New
 
 ### Darkbeat's Storage Locker
 
-The Storage Locker is a locked chest that always contains one tier 6 loot item and up to three randomly selected bonus items per opening. Each opening also has an independent **~20% chance to contain a Sturdy Iron Key**.
+The Storage Locker is a locked chest that always contains one tier 6 loot item, plus three additional rolls per opening. Each opening also has an independent **~20% chance to contain a Sturdy Iron Key** on top of everything else.
 
-Each opening makes three independent rolls from the bonus table. Each roll has a 10% cumulative chance to land on a salvage bag, distributed evenly across 11 salvage types (~0.91% each):
+Each of the three rolls lands on either a **Massive Mana Stone (50% chance)** or the bonus table below (50% chance, split among its entries):
+
+| Item | Chance per roll |
+|---|---|
+| Massive Mana Stone | 50% |
+| PK Trophies ×20 | 15% |
+| Phials of Bloody Tears ×2 | 8% |
+| Trade Note ×25 (250,000 pyreals) | 6% |
+| Salvage bag (11 types, ~0.5% each) | 5.5% |
+| Foolproof tinkering gem (14 types, ~0.25% each) | 3.5% |
+| Treated Healing Kit | 2.5% |
+| Tumerok Salted Meat ×20 | 2.5% |
+| Mana Philtre ×20 | 2.5% |
+| Stamina Philtre ×20 | 2.5% |
+| A Box | 2% |
+
+The salvage bags are distributed evenly across 11 types (all full WS10, 100-unit bags):
 
 | Salvage | Use |
 |---------|-----|
@@ -903,8 +1041,6 @@ Each opening makes three independent rolls from the bonus table. Each roll has a
 | Fire Opal | Crippling Blow |
 | Black Opal | Critical Strike |
 | Bloodstone | Minor Endurance (jewelry only) |
-
-All salvage bags are full WS10 (100-unit) bags. Other possible bonus items include foolproof tinkering gems, Trade Notes, PK Trophies, Phials of Bloody Tears, consumables, and Massive Mana Stones.
 
 ### Skill and Attribute Reset Gem — PK Trophy Cost
 
@@ -953,48 +1089,51 @@ Darkbeat's Lost Storage Key, Green Garnet Salvage, and the Level Requirement Rem
 
 | Item | Chance |
 |------|--------|
-| Workmanship Morph Gem | ~5.6% |
-| Missile Defense Requirement Morph Gem | ~5.6% |
-| Melee Requirement Morph Gem | ~5.6% |
-| Player Wield Requirement Morph Gem | ~5.6% |
-| Slayer Upgrade Morph Gem | ~5.6% |
-| Slayer Morph Gem | ~1.9% |
-| Creature Resistance Morph Gem | ~1.9% |
-| Sunstone Salvage WS10 — Armor Rend | ~3.7% |
-| Red Garnet Salvage WS10 — Fire Rend | ~3.7% |
-| Black Garnet Salvage WS10 — Pierce Rend | ~3.7% |
-| Imperial Topaz Salvage WS10 — Slash Rend | ~3.7% |
-| Jet Salvage WS10 — Lightning Rend | ~3.7% |
-| Aquamarine Salvage WS10 — Cold Rend | ~3.7% |
-| White Sapphire Salvage WS10 — Bludgeon Rend | ~3.7% |
-| Emerald Salvage WS10 — Acid Rend | ~3.7% |
-| Fire Opal Salvage WS10 — Crippling Blow | ~3.7% |
-| Black Opal Salvage WS10 — Critical Strike | ~3.7% |
-| Bloodstone Salvage WS10 — Minor Endurance (jewelry only) | ~3.7% |
-| Sturdy Iron Keys ×3 | ~5.6% |
-| Darkbeat's Lost Storage Key | ~5.6% |
-| Mythic Mystery Box | ~5.6% |
-| MMDs ×5 | ~5.6% |
-| PK Trophies ×30 | ~5.6% |
+| Workmanship Morph Gem | ~5.3% |
+| Missile Defense Requirement Morph Gem | ~5.3% |
+| Melee Requirement Morph Gem | ~5.3% |
+| Player Wield Requirement Morph Gem | ~5.3% |
+| Slayer Upgrade Morph Gem | ~5.3% |
+| Lesser Impenetrability Morph Gem | ~5.3% |
+| Slayer Morph Gem | ~1.8% |
+| Creature Resistance Morph Gem | ~1.8% |
+| Sunstone Salvage WS10 — Armor Rend | ~3.5% |
+| Red Garnet Salvage WS10 — Fire Rend | ~3.5% |
+| Black Garnet Salvage WS10 — Pierce Rend | ~3.5% |
+| Imperial Topaz Salvage WS10 — Slash Rend | ~3.5% |
+| Jet Salvage WS10 — Lightning Rend | ~3.5% |
+| Aquamarine Salvage WS10 — Cold Rend | ~3.5% |
+| White Sapphire Salvage WS10 — Bludgeon Rend | ~3.5% |
+| Emerald Salvage WS10 — Acid Rend | ~3.5% |
+| Fire Opal Salvage WS10 — Crippling Blow | ~3.5% |
+| Black Opal Salvage WS10 — Critical Strike | ~3.5% |
+| Bloodstone Salvage WS10 — Minor Endurance (jewelry only) | ~3.5% |
+| Sturdy Iron Keys ×3 | ~5.3% |
+| Darkbeat's Lost Storage Key | ~5.3% |
+| Mythic Mystery Box | ~5.3% |
+| MMDs ×5 | ~5.3% |
+| PK Trophies ×30 | ~5.3% |
 
-All salvage bags are full WS10 bags (100 units). Ancient Bottle no longer drops from Rare Mystery Boxes — it's Mythic-only now. The Slayer Upgrade Morph Gem moved in here from the Mythic Mystery Box, and the Level Requirement Removal Morph Gem no longer drops here at all. The Slayer Morph Gem and Creature Resistance Morph Gem appear here at their rarest (~1.9% each) — they're more common in the Mythic box.
+All salvage bags are full WS10 bags (100 units). Ancient Bottle no longer drops from Rare Mystery Boxes — it's Mythic-only now. The Slayer Upgrade Morph Gem moved in here from the Mythic Mystery Box, and the Level Requirement Removal Morph Gem no longer drops here at all. The Slayer Morph Gem and Creature Resistance Morph Gem appear here at their rarest (~1.8% each) — they're more common in the Mythic box. The Lesser Impenetrability Morph Gem was added at the standard morph-gem weight, which shifted every other slot down slightly.
 
 ### Mythic Mystery Box
 
 | Item | Chance |
 |------|--------|
-| Ancient Bottle (XP Bottle) | ~3.8% |
-| Impenetrability Morph Gem | ~11.5% |
-| Oil of Creature Slaying | ~11.5% |
-| Skill and Attribute Reset Gem | ~11.5% |
-| Imbue Altering Morph Gem | ~11.5% |
-| Slayer Morph Gem | ~11.5% |
-| Creature Resistance Morph Gem | ~11.5% |
-| MMDs ×20 | ~11.5% |
-| PK Trophies ×250 | ~11.5% |
-| Shimmering Skeleton Key | ~3.8% |
+| Ancient Bottle (XP Bottle) | ~3.1% |
+| Impenetrability Morph Gem | ~9.4% |
+| Oil of Creature Slaying | ~9.4% |
+| Skill and Attribute Reset Gem | ~9.4% |
+| Imbue Altering Morph Gem | ~9.4% |
+| Slayer Morph Gem | ~9.4% |
+| Creature Resistance Morph Gem | ~9.4% |
+| Racial Requirement Morph Gem | ~9.4% |
+| Allegiance Rank Requirement Morph Gem | ~9.4% |
+| MMDs ×20 | ~9.4% |
+| PK Trophies ×250 | ~9.4% |
+| Shimmering Skeleton Key | ~3.1% |
 
-The Slayer Upgrade Morph Gem moved out to the Rare Mystery Box; Oil of Creature Slaying takes its slot here. The Slayer Morph Gem and Creature Resistance Morph Gem also drop here at ~11.5% each — far more likely than in the Rare box.
+The Slayer Upgrade Morph Gem moved out to the Rare Mystery Box; Oil of Creature Slaying takes its slot here. The Slayer Morph Gem and Creature Resistance Morph Gem also drop here at ~9.4% each — far more likely than in the Rare box. The Racial Requirement and Allegiance Rank Requirement Morph Gems drop here as well, and are otherwise only available from Darkbeat.
 
 > **Shimmering Skeleton Key** — a single-use key that unlocks **any** locked door or chest, no matter the lock. It crumbles to dust after one use and is **slippery**, so it drops on death (into your corpse for a killer to loot). Obtainable only from the Mythic Mystery Box.
 
@@ -1028,7 +1167,7 @@ When you flag a Tinker, the character is instantly transformed:
 
 - ✅ **All eight crafting skills plus Arcane Lore are specialized and maxed** — Item Tinkering, Weapon Tinkering, Armor Tinkering, Magic Item Tinkering, Alchemy, Lockpick, Fletching, Cooking, and Arcane Lore.
 - ✅ **All attributes are maxed** (Strength, Endurance, Coordination, Quickness, Focus, Self) and your health, stamina, and mana are refreshed to full.
-- ✅ **A Tinkering Trinket** is placed in your inventory. It buffs all six attributes and every crafting skill (level-7 aptitudes) and additionally carries **Major cantrips** for all six attributes and the four tinkering skills (Item, Weapon, Armor, and Magic Item Tinkering).
+- ✅ **A Tinkering Trinket** is placed in your inventory. It buffs all six attributes and every crafting skill (level-7 aptitudes), additionally carries **Major cantrips** for all six attributes and the four tinkering skills (Item, Weapon, Armor, and Magic Item Tinkering), and also grants **Brilliance**. Re-running `/FlagTinker` patches any new trinket buffs onto a trinket you already have, so existing Tinkers don't need a fresh one to pick up additions like this.
 - ❌ **All combat skills are removed** — every weapon skill, shield, and all offensive magic (War, Void, Life, Creature Enchantment, Item Enchantment) is untrained. A Tinker is not built to fight.
 
 > 🔁 **Already a Tinker?** Re-run `/FlagTinker` on an existing Tinker to pick up the latest upgrades (Arcane Lore specialization and the trinket's Major cantrips). It's safe to run again — nothing is reset. If your trinket is equipped, re-equip it or relog to apply the new cantrips.
@@ -1042,3 +1181,34 @@ When you flag a Tinker, the character is instantly transformed:
 - 🏟️ **No arenas.** A Tinker cannot join arena events. Attempting to queue returns "Tinker characters cannot join arena events."
 
 The intent is simple: a Tinker is a maxed-out crafting workstation in character form. Flag one, park it in your allegiance, and let it handle all your tinkering, salvaging, and item work.
+
+---
+
+## 🎰 Tinkering Lottery
+
+Every **successful** tinker rolls a bonus lottery based on the **salvage type** you used. Winnings are applied on top of the tinker's normal effect and are broadcast to everyone nearby: *"<name> won the tinkering lottery!"* Losing rolls are silent, and a failed tinker never rolls at all.
+
+Most salvage types have their own reward table. The two families below are documented here in full; the rest (Steel, Iron, Granite, Green Garnet, Opal, Mahogany, Velvet, Brass, the rending gems, the imbue gems, and the defense imbue gems) each roll their own bonuses.
+
+**Minor attribute cantrip salvage** — Agate (Focus), Bloodstone (Endurance), Carnelian (Strength), Lapis Lazuli (Willpower), Smokey Quartz (Coordination), Rose Quartz (Quickness):
+
+| Prize | Chance |
+|---|---|
+| Extra maximum mana on the item | ~40% |
+| Slower mana burn rate (up to ~40 extra seconds) | ~40% |
+| Upgrade that salvage's Minor cantrip to Moderate | 5% |
+| Creature Resistance Rating (if the item has none) | 10% |
+| Creature Slayer Rating (if the item has none) | 10% |
+
+The mana pool and mana burn prizes come off the same roll, so an item can win one or the other but never both.
+
+**Heritage and rank salvage** — Ebony, Porcelain, Teak (change the racial requirement) and Silk (removes the allegiance rank requirement):
+
+| Prize | Chance |
+|---|---|
+| +10–20 Armor Level (armor only) | 50% |
+| Jackpot: a further +10–20 Armor Level | 15%, WS10 salvage on a WS≤6 item |
+| Creature Resistance Rating (if the item has none) | 10% |
+| Creature Slayer Rating (if the item has none) | 10% |
+
+Winning a Jackpot on the heritage and rank salvage requires both conditions — workmanship 10 salvage *and* a target item of workmanship 6 or lower.

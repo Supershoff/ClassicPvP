@@ -1815,6 +1815,19 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasArenaRareDmgReductionBuff); else SetProperty(PropertyBool.HasArenaRareDmgReductionBuff, value); }
         }
 
+        /// <summary>
+        /// Debug/testing only. When set, damage dealt to this player resolves against the
+        /// pvp_dmg_mod_arena_* configs anywhere in the world, exactly as if the player were
+        /// standing in an arena landblock. It does NOT make the player part of an arena event:
+        /// arena event gating, observer rules, overtime and match damage tracking all continue
+        /// to key off the real landblock. Set with /arenatesttarget.
+        /// </summary>
+        public bool ArenaTestTarget
+        {
+            get => GetProperty(PropertyBool.ArenaTestTarget) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.ArenaTestTarget); else SetProperty(PropertyBool.ArenaTestTarget, value); }
+        }
+
         /* PK Quests */
         public string PKQuestListSerialized
         {

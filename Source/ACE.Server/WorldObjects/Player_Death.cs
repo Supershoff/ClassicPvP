@@ -301,9 +301,11 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                // Phase 2 hometown kill effect
+                // Phase 2 hometown kill effect. Phase 2 is fought inside the town's meeting hall, so the
+                // death only moves the stone if it happened in the hall — kills out in the town proper
+                // are ordinary PvP and no longer count.
                 var killedLandblock = Location?.LandblockId.Landblock ?? 0;
-                var ahEntry = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.GetByLandblock(killedLandblock);
+                var ahEntry = ACE.Server.Entity.AllegianceHometown.AllegianceHometownRegistry.GetByHallLandblock(killedLandblock);
                 if (ahEntry != null)
                 {
                     var ahTown = ACE.Server.Managers.AllegianceHometownManager.GetTown(ahEntry.TownId);
@@ -327,7 +329,14 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                var globalPKDe = $"{lastDamager.Name} has defeated {Name}!";
+                // lastDamager is null whenever a death is forced rather than dealt: Creature.Smite()
+                // calls OnDeath() with no damage info at all. Both the admin @smite command and the
+                // Allegiance Hometown resolution smite reach this path, and the victim still has real
+                // PK damage history, so the guards above pass and we land here with a null lastDamager.
+                // topDamager comes from the victim's own damage history and is already guaranteed
+                // non-null and a player by those guards, so credit the kill to them instead.
+                var killerName = lastDamager?.Name ?? topDamager.Name;
+                var globalPKDe = $"{killerName} has defeated {Name}!";
 
                 //if ((Location.Cell & 0xFFFF) < 0x100)
                 //    globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";

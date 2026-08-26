@@ -35,8 +35,8 @@ namespace ACE.Server.Managers
                 return;
 
             // Apply ELO decay once per calendar day regardless of arena enabled/disabled state.
-            // Each event category (1v1, 2v2) decays independently; playing one does not
-            // reset the other.
+            // Each event category (1v1, 2v2) decays independently, at a rate set by how
+            // many matches the player completed in that same category over the last 7 days.
             if (DateTime.Now.Date > LastDecayTickDate.Date)
             {
                 LastDecayTickDate = DateTime.Now;
@@ -833,6 +833,15 @@ namespace ACE.Server.Managers
             if (arenaEvent == null)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"There is no active arena match with EventID = {eventID}.", ChatMessageType.System));
+                return;
+            }
+
+            // An event that hasn't started yet has no saved ID, so it matches
+            // EventID 0.  Observing one would reveal the matchup to a third party
+            // who could relay it to a participant looking to dodge a bad draw.
+            if (!arenaEvent.HasStarted)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"That arena match hasn't started yet.  You can watch it once it begins.", ChatMessageType.System));
                 return;
             }
 

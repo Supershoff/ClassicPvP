@@ -785,7 +785,10 @@ namespace ACE.Server.Command.Handlers
         // Experience
         // ==================================
 
-        [CommandHandler("grantxp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Give XP to yourself (or the specified character).", "ulong\n" + "@grantxp [name] 191226310247 is max level 275")]
+        [CommandHandler("grantxp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Give XP to yourself (or the specified character).",
+            "[name] <amount> [force]\n" +
+            "@grantxp [name] 191226310247 is max level 275\n" +
+            "Add \"force\" to bypass the rolling season XP cap and the max-level XP gate (testing).")]
         public static void HandleGrantXp(Session session, params string[] parameters)
         {
             if(!Common.ConfigManager.Config.Server.IsTestWorld && session.AccessLevel < AccessLevel.Developer)
@@ -793,6 +796,17 @@ namespace ACE.Server.Command.Handlers
                 ChatPacket.SendServerMessage(session, "You dont have access to this command",
                     ChatMessageType.Broadcast);
                 return;
+            }
+
+            // Optional trailing "force" argument: bypasses the Infiltration rolling season XP cap
+            // so an admin can level a test character past the current cap. Only recognized as the
+            // last token (so a player actually named Force can still be targeted by name), and
+            // stripped out here so it never reaches the name/amount parameter resolver.
+            var force = false;
+            if (parameters != null && parameters.Length > 1 && parameters[^1].Equals("force", StringComparison.OrdinalIgnoreCase))
+            {
+                force = true;
+                parameters = parameters[..^1];
             }
 
             if (parameters?.Length > 0)
@@ -816,11 +830,12 @@ namespace ACE.Server.Command.Handlers
                     try
                     {
                         var amount = aceParams[1].AsLong;
-                        aceParams[0].AsPlayer.GrantXP(amount, XpType.Admin, ShareType.None);
+                        aceParams[0].AsPlayer.GrantXP(amount, XpType.Admin, ShareType.None, bypassXpCap: force);
 
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted.", ChatMessageType.Advancement));
+                        var forceSuffix = force ? " (season XP cap bypassed)" : "";
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted{forceSuffix}.", ChatMessageType.Advancement));
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {amount:N0} experience to {aceParams[0].AsPlayer.Name}.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {amount:N0} experience to {aceParams[0].AsPlayer.Name}{forceSuffix}.");
 
                         return;
                     }
@@ -831,7 +846,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            ChatPacket.SendServerMessage(session, "Usage: /grantxp [name] 1234 (max 999999999999)", ChatMessageType.Broadcast);
+            ChatPacket.SendServerMessage(session, "Usage: /grantxp [name] 1234 [force] (max 999999999999)", ChatMessageType.Broadcast);
         }
 
         [CommandHandler("grantluminance", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Give luminance to yourself (or the specified character).", "ulong\n" + "@grantluminance [name] 1500000 is max luminance")]

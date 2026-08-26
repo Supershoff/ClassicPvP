@@ -28,9 +28,9 @@ namespace ACE.Server.WorldObjects
         public byte TownId { get; set; }
 
         /// <summary>
-        /// Anti-"peacing" flag: while any non-attacker player lingers within 100m of the stone, attacker
-        /// damage is heavily reduced (see DamageEvent / SpellProjectile). Recomputed each Phase 2 landblock
-        /// tick. Written and read only on the landblock thread, so no synchronization is needed.
+        /// Anti-"peacing" flag: while any non-attacker player is inside the meeting hall, attacker damage
+        /// is heavily reduced (see DamageEvent / SpellProjectile). Recomputed each Phase 2 hall tick.
+        /// Written and read only on the hall landblock thread, so no synchronization is needed.
         /// </summary>
         public bool SuppressDamage { get; set; }
 

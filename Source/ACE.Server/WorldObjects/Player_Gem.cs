@@ -138,6 +138,7 @@ namespace ACE.Server.WorldObjects
         public void UseSkillAttrResetGem(Gem gem)
         {
             if (this.QuestManager.CanSolve("SkillAlterationGemPickedUp") &&
+                this.QuestManager.CanSolve("CombatSkillAlterationGemPickedUp") &&
                 this.QuestManager.CanSolve("AttributeLoweringGemPickedUp") &&
                 this.QuestManager.CanSolve("AttributeRaisingGemPickedUp"))
             {
@@ -168,6 +169,7 @@ namespace ACE.Server.WorldObjects
             }
 
             this.QuestManager.Erase("SkillAlterationGemPickedUp");
+            this.QuestManager.Erase("CombatSkillAlterationGemPickedUp");
             this.QuestManager.Erase("AttributeLoweringGemPickedUp");
             this.QuestManager.Erase("AttributeRaisingGemPickedUp");
             this.QuestManager.Increment("SkillAttrResetGemUsed");

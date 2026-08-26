@@ -24,21 +24,53 @@ namespace ACE.Server.Entity
     /// </summary>
     public static class ZergControlLandblocks
     {
+        /// <summary>
+        /// Per-allegiance cap inside an Allegiance Hometown meeting hall. The halls are permanently
+        /// zerg-controlled, not only while a Phase 2 conflict is live — a hall is a small dungeon with
+        /// one entrance, so an uncapped allegiance could simply wall it off at any time.
+        /// </summary>
+        private const uint MeetingHallMaxPerAllegiance = 7;
+
         /// <summary>Landblocks that are permanently zerg-controlled and can never be removed at runtime.</summary>
-        private static readonly HashSet<uint> _permanent = new HashSet<uint> { 0x01C9 };
+        private static readonly HashSet<uint> _permanent = BuildPermanentSet();
 
         private static readonly ConcurrentDictionary<uint, ZergControlArea> _zergControlLandblocksMap = BuildInitialMap();
+
+        private static HashSet<uint> BuildPermanentSet()
+        {
+            // Abandoned Mine (Subway)
+            var set = new HashSet<uint> { 0x01C9 };
+
+            // Every Allegiance Hometown meeting hall. Marking them permanent stops AddDynamicLandblock /
+            // RemoveDynamicLandblock (Hot Dungeons) from overriding the cap or dropping the area entirely.
+            foreach (var town in AllegianceHometown.AllegianceHometownRegistry.All.Values)
+                set.Add(town.HallLandblockId);
+
+            return set;
+        }
 
         private static ConcurrentDictionary<uint, ZergControlArea> BuildInitialMap()
         {
             var map = new ConcurrentDictionary<uint, ZergControlArea>();
 
-            // Abandoned Mine (Subway) — permanent, capped at 9 per allegiance.
+            // Abandoned Mine (Subway) — permanent.
             map[0x01C9] = new ZergControlArea
             {
-                MaxPlayersPerAllegiance = 9,
+                MaxPlayersPerAllegiance = 5,
                 AreaLandblockIds = new uint[] { 0x01C9 },
             };
+
+            // Allegiance Hometown meeting halls (0x011D..0x0135) — permanent, one area each so the caps
+            // are independent: an allegiance holding Holtburg's hall does not consume Arwic's allowance.
+            // Derived from the town registry rather than hardcoded so the two can never drift apart.
+            foreach (var town in AllegianceHometown.AllegianceHometownRegistry.All.Values)
+            {
+                map[town.HallLandblockId] = new ZergControlArea
+                {
+                    MaxPlayersPerAllegiance = MeetingHallMaxPerAllegiance,
+                    AreaLandblockIds = new uint[] { town.HallLandblockId },
+                };
+            }
 
             return map;
         }

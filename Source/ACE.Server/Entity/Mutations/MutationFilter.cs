@@ -12,7 +12,11 @@ namespace ACE.Server.Entity.Mutations
 
         // MutationFilter -> Mutation -> MutationOutcome -> EffectList -> Effect
         
-        public bool TryMutate(WorldObject wo, int tier = 1, float qualityMod = 0.0f)
+        /// <summary>
+        /// qualityBias is the chance for a rolled outcome to be upgraded to the best result
+        /// available at the same wield requirement. 0 leaves the roll untouched.
+        /// </summary>
+        public bool TryMutate(WorldObject wo, int tier = 1, float qualityMod = 0.0f, float qualityBias = 0.0f)
         {
             double rng;
             if(qualityMod >= 0)
@@ -23,7 +27,7 @@ namespace ACE.Server.Entity.Mutations
             var mutated = false;
 
             foreach (var mutation in Mutations)
-                mutated |= mutation.TryMutate(wo, tier, rng, qualityMod);
+                mutated |= mutation.TryMutate(wo, tier, rng, qualityMod, qualityBias);
 
             return mutated;
         }

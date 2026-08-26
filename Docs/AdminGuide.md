@@ -24,6 +24,7 @@ All server properties are stored in `shard_config` and are readable/writable at 
 16. [Loot-to-Weenie Export](#16-loot-to-weenie-export)
 17. [Spell Management](#17-spell-management)
 18. [Dungeon Bosses](#18-dungeon-bosses)
+19. [Missile Tracking (Experimental)](#19-missile-tracking-experimental)
 
 ---
 
@@ -253,6 +254,34 @@ Allows defining sets of `pvp_dmg_mod` property overrides that are automatically 
 | `/reloadpvpdmgpresets` | Hot-reloads `pvp_dmg_mod_presets.json` from disk. Does NOT re-apply — use `/applypvpdmgpreset` after if needed |
 | `/applypvpdmgpreset [threshold]` | Force-applies the preset at the given threshold. Omit argument to apply the currently active preset for the live level cap |
 
+### Arena-Only Damage Modifiers
+
+Every `pvp_dmg_mod_*` property has a `pvp_dmg_mod_arena_*` counterpart (e.g. `pvp_dmg_mod_dagger_cb` → `pvp_dmg_mod_arena_dagger_cb`). All default to `1.0`.
+
+**When the defender is standing in an arena landblock, the arena value is used *instead of* the global one.** The two sets never stack — an arena fight reads the arena set and nothing else, so a value left at the default `1.0` means "no scaling in arenas", not "fall back to the global value".
+
+The check is landblock-only: it does **not** look for a running arena event and does **not** check whether the players are in that event. Anyone taking damage on an arena landblock gets the arena values. This keeps it to a single set lookup per damage calculation.
+
+Notes:
+- Applies to melee/missile (`DamageEvent`), war/void projectiles and their variance mods (`SpellProjectile`), and void DOT ticks (`EnchantmentManager`).
+- Arena values are ordinary double properties, so they can be set with `/modifydouble` and included in `pvp_dmg_mod_presets.json` like any other key.
+
+#### Testing arena values outside an arena
+
+`/arenatesttarget [on|off] [characterName]` (Admin) flags a player so that **damage dealt to them** resolves against the `pvp_dmg_mod_arena_*` configs anywhere in the world, exactly as if they were standing in an arena landblock.
+
+| Command | Effect |
+|---|---|
+| `/arenatesttarget on Testmonkey` | Flags Testmonkey |
+| `/arenatesttarget off Testmonkey` | Clears the flag |
+| `/arenatesttarget Testmonkey` | Shows the current setting |
+| `/arenatesttarget on` | Flags yourself |
+| `/arenatesttarget list` | Lists every online player currently flagged |
+
+The flag only redirects config lookups. It does **not** join the player to an arena event — event gating, observer rules, overtime and match damage tracking all still key off the real landblock, so a flagged player outside an arena takes damage normally rather than being blocked by the "no active event" checks.
+
+The target must be online (the flag is read off the live player during damage calculation). It persists on the character until cleared, including across logout, so clear it when testing is done — `/arenatesttarget list` shows what is still set.
+
 ---
 
 ## 5. PvP XP on Player Kills
@@ -301,6 +330,58 @@ Player XP is divided into three independent buckets: **Monster**, **Quest**, and
 Buckets reset when the rolling cap advances, not on a daily timer. Players further behind the cap get proportionally larger budgets.
 
 **PvP overflow** goes into Ancient Bottles (WCID 490071). A bottle holds up to 100 million XP. Players consume it manually when their PvP budget has room.
+
+### Catch-Up XP Boost
+
+Characters whose lifetime total XP sits below `catchup_xp_threshold` of the current season XP cap earn a multiplier on **all** XP earned through `EarnXP` (kills, quests, exploration, fellowship shares). The multiplier scales linearly with how far behind the cap the character is — the furthest behind get the largest boost:
+
+```
+progress    = totalXp / rolling_xp_cap
+band        = progress / catchup_xp_threshold          (0.0 at zero XP → 1.0 at the threshold)
+multiplier  = max − band × (max − min)
+```
+
+| Player's total XP vs. cap | Multiplier (defaults) |
+|---|---|
+| 0 % | 5.00× |
+| 17.5 % | 4.25× |
+| 35 % | 3.50× |
+| 52.5 % | 2.75× |
+| just under 70 % | ~2.00× |
+| 70 % or above | 1.00× (no boost) |
+
+The step from 2.00× down to 1.00× at the threshold is deliberate: this is a catch-up mechanic for players who are behind, not a taper for players who have already caught up.
+
+The boost multiplies alongside `xp_modifier`, so a 3.0× season rate and a 5.0× catch-up boost stack to 15×. Boosted XP is still subject to the global cap and the per-category budgets above — the boost lets a player reach their ceiling faster, it does not raise it. Requires an active rolling level cap (`GetCurrentXpCap() > 0`); with no season running the multiplier is always 1.0.
+
+Players see their current boost on the `Catch-Up` line of `/season status`.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `catchup_xp_enabled` | bool | `true` | Master on/off switch for the catch-up boost |
+| `catchup_xp_threshold` | double | `0.70` | Fraction of the season cap below which the boost applies |
+| `catchup_xp_max_multiplier` | double | `5.00` | Boost for a character with 0 total XP (furthest behind) |
+| `catchup_xp_min_multiplier` | double | `2.00` | Boost for a character right at the threshold (least far behind) |
+
+### Bypassing the Cap for Testing
+
+`/grantxp` accepts an optional trailing `force` argument that ignores the cap system entirely, so a test character can be leveled past the current season cap without touching any server-wide property.
+
+```
+/grantxp 500000000 force
+/grantxp Nakedmoleman 500000000 force
+```
+
+`force` skips three things: the rolling season XP cap (global remaining + per-category buckets), the `season_max_xp` safety clamp, and the max-level XP gate (XP still lands at level 126 even when `allow_xp_at_max_level` is false). A normal `/grantxp` without the argument stays fully capped — `XpType.Admin` only bypasses the per-category buckets, never the global remaining.
+
+Notes:
+
+- `force` is only recognized as the **last** token, so a player actually named Force can still be targeted by name (`/grantxp Force 1000`).
+- Access is the same as `/grantxp` itself: Developer or higher on a live world, anyone on a test world.
+- Forced grants are tagged `(season XP cap bypassed)` in both the confirmation message and the audit-channel broadcast.
+- Unassigned XP is still clamped to `uint.MaxValue` (~4.29 billion). That is a client display limit, not a season cap — `TotalExperience` (which drives level) goes as high as you grant, but to spend more than 4.29 billion you must spend the pool down and grant again.
+
+This replaces the old workaround of toggling `rolling_level_cap_enabled` off and back on, which lifted the cap for every online player during the window.
 
 ---
 
@@ -420,7 +501,22 @@ Weekly Sunday snapshots capture the top 10 players across 13 scored categories. 
 
 ### ELO Decay
 
-1v1 and 2v2 ELO decays **3% per day** after a player goes **3+ consecutive days without a match** in that format. Decay is written to the database each day so the stored ELO is always current. Playing a different arena format does not reset the decay clock for a specific format.
+The 1v1 and 2v2 leaderboard score **is** the ELO rating — wins, matches played and 2v2 survivals are tracked as stats but contribute nothing to rank.
+
+Decay runs once per calendar day from `ArenaManager.Tick()`. The rate is set by how many matches the player completed **in that same format** over the trailing 7 days, counted from `arena_player` joined to finished `arena_event` rows (status 5 or 6; cancelled events do not count):
+
+| Matches in last 7 days | 1v1 daily decay | 2v2 daily decay |
+|---|---|---|
+| 0 | 5% | 3% |
+| 1 – 2 | 3% | 1% |
+| 3 – 9 | 1% | none |
+| 10+ | none | none |
+
+Decay applies to the rating **above the 1500 baseline** only (1800 with no matches loses 5% of 300 = 15 points), and never drops a rating below 1500. Ratings already at or under 1500 are untouched.
+
+**Team ratings (`arena_team_stats`) do not decay at all.**
+
+Each row's `last_decay_datetime` is stamped every time the job examines it — and by a match result — whether or not decay was owed. The job skips any row already stamped today, so a mid-day server restart cannot apply a second day of decay. Tiers live in `ArenaRanking.DecayTiers1v1` / `DecayTiers2v2`.
 
 ---
 
@@ -728,6 +824,7 @@ Changes take effect on the next cast — already-active enchantments are not ret
 | `/startrollingcap` | Start the season rolling cap from today |
 | `/forcerollingcap` | Force-recalculate rolling_xp_cap (and xp_modifier if enabled) |
 | `/rollingcapstatus` | Show cap status, season day, XP modifier state |
+| `/grantxp [name] <amount> [force]` | Grant XP; `force` bypasses the season cap and max-level gate (testing) |
 | `/pvpdmgpresets` | List pvp_dmg_mod presets and active one |
 | `/reloadpvpdmgpresets` | Hot-reload pvp_dmg_mod_presets.json |
 | `/applypvpdmgpreset [n]` | Force-apply preset at threshold n |
@@ -812,6 +909,7 @@ Random scaled bosses that replace a normal monster spawn in an active Hot Dungeo
 | `dungeon_boss_health_exponent` | double | `1.4` | Exponent for health scaling vs the level cap |
 | `dungeon_boss_damage_mult` | double | `1.0` | Extra multiplier on boss melee (body-part) damage |
 | `dungeon_boss_defense_mult` | double | `1.0` | Multiplier on defensive skills (evade/resist frequency). Lower if bosses resist too often |
+| `dungeon_boss_armor_mult` | double | `1.0` | Multiplier on natural armor, which mitigates **melee and missile only** — spell damage ignores armor entirely. Lower if weapons hit bosses for too little; raise to make bosses tankier against weapons without touching health, damage or magic |
 | `dungeon_boss_trophy_count` | long | `10` | PK Trophies awarded to each participant on kill |
 | `dungeon_boss_box_count` | long | `3` | A Boxes scattered on the ground on kill |
 | `dungeon_boss_phial_count` | long | `3` | Phials awarded to each participant on kill |
@@ -840,3 +938,166 @@ Each boss mirrors the model, animation, sound and physics of an existing creatur
 | Nharim Dul, the Whispering Death | Shadow Captain | `6554` |
 
 To re-skin a boss, copy those DIDs from the new reference weenie into the boss's SQL file in `Content/sql/weenies/DungeonBosses/`. **Pick a reference with its own dedicated creature `Setup`.** Creatures built on the generic human setup (`0x02000001`) carry no geometry of their own — their whole appearance comes from the clothing table, and if the client dat has no clothing entry for that setup the boss renders as an untextured naked human. Don't forget `PaletteTemplate` (int type 3) alongside `PaletteBase`/`ClothingBase`; without it the colour set is never applied. Combat stats are unaffected — they're authored at reference level 275 and scaled at spawn. After changing a model, verify it renders with `/dungeonboss spawn <name>`: if the setup is missing from the client dat the boss fails to enter the world and the failure is logged by name.
+
+---
+
+## 19. Missile Tracking (Experimental)
+
+Four independent changes to how bow / crossbow / thrown projectiles are aimed, plus one to how often player positions are broadcast. **Every one defaults to off** — with no properties set, missile behavior is exactly what it has always been.
+
+Each is gated separately so they can be A/B tested in isolation. Turn on **one at a time**, play a session, and only add the next once you're satisfied nothing else moved.
+
+### The underlying problem
+
+Arrows do not home. One firing solution is computed at launch and the projectile is pure ballistics under gravity after that — this is correct retail behavior and none of these changes alter it. What the changes address is the **prediction horizon** (how far into the future the server has to guess where the target will be) and the **hit envelope** (how much of the target the arrow can actually touch).
+
+A player's collision volume is two spheres of radius 0.48 at z 0.475 and z 1.35, height 1.835. With an arrow radius of 0.10 that is a **0.58 m hit envelope**. Measured prediction horizons against that envelope:
+
+| weapon | 20 m | 30 m | 40 m |
+|---|---|---|---|
+| bow (27.3 m/s) | 0.81 s horizon → 4.0 m error on a strafe reversal | 1.19 s → 6.0 m | 1.59 s → 8.0 m |
+| bow + fast missiles (32.8 m/s) | 0.65 s → 3.2 m | 0.99 s → 5.0 m | 1.31 s → 6.6 m |
+| thrown (18.6 m/s) | 1.51 s → 7.6 m | 2.24 s → 11.2 m | out of range |
+
+### Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `missile_fresh_solution` | bool | `false` | **Fix 1.** Recalculate the firing solution (velocity, spawn origin, orientation) at the instant the projectile spawns, instead of before the turn and aim animation |
+| `missile_lead_fallback` | bool | `false` | **Fix 2.** When the quartic intercept solver finds no solution against a moving target, fall back to the lateral solver instead of silently dropping to a zero-lead stationary aim |
+| `missile_lead_fallback_log` | bool | `false` | **Fix 2 diagnostics.** Log every quartic intercept failure with distance, target velocity and what the fallback produced. Works independently of `missile_lead_fallback` — turn this on alone first to measure how often the case fires before changing behavior. Noisy |
+| `missile_aim_center_mass` | bool | `false` | **Fix 4.** Aim at the center of a player target's collision spheres rather than at the top of the head / the gap between spheres. Player targets only |
+| `missile_aim_center_mass_high` | double | `0.75` | Fraction of target height aimed at for AttackHeight **High**. Only used when `missile_aim_center_mass` is on |
+| `missile_aim_center_mass_medium` | double | `0.62` | Fraction of target height aimed at for AttackHeight **Medium**. Only used when `missile_aim_center_mass` is on |
+| `missile_aim_center_mass_low` | double | `0.27` | Fraction of target height aimed at for AttackHeight **Low**. Only used when `missile_aim_center_mass` is on |
+| `player_update_position_threshold` | double | `1.0` | **Fix 5.** Seconds between forced position broadcasts for a moving player. `1.0` is the stock retail-estimated value; lower to `0.2`–`0.33` for tighter PvP sync at a bandwidth cost |
+
+### Fix 1 — stale firing solution (`missile_fresh_solution`)
+
+The firing solution used to be computed *before* the turn and the aim animation, then applied after them. Measured from `client_portal.dat` (motion table `0900020D`), that gap is:
+
+| stance | aim animation length |
+|---|---|
+| Bow / Crossbow, level shot | 0.033 s |
+| Bow / Crossbow, elevated (15°–45°) | 0.067 – 0.267 s |
+| Bow / Crossbow, steep (90°) | 0.567 s |
+| **Thrown / Atlatl, every aim level** | **0.378 s** |
+
+Plus rotate time on repeat attacks against a circling target. Both the intercept prediction *and* the spawn origin were stale by that much, so the arrow also left from where the shooter had been rather than where they were.
+
+With this on, the solution is re-solved at spawn time. `aimLevel` (and therefore the spawn offset) is deliberately **reused** from the earlier pass — the animation has already played, so the offset has to stay consistent with what the client rendered. If the re-solve fails because the target ran out of range mid-animation, the original solution is kept rather than misfiring; the attack was already committed at that point.
+
+Biggest effect on thrown weapons, near-free for level bow shots. Applies to monster archers too.
+
+### Fix 2 — zero-lead fallback (`missile_lead_fallback`)
+
+The quartic intercept solver returns no solution across a band that is still **well inside** the weapon's max range. Stock behavior falls through to the stationary solver, which aims at where the target is standing *right now* — a guaranteed miss after a 1–2 s flight, with no log line.
+
+Where lead silently dies against a fleeing target:
+
+| weapon | lead lost past | actual max range |
+|---|---|---|
+| thrown (18.6 m/s) | 21 – 30 m | ~35 m |
+| bow (27.3 m/s) | 51 – 61 m | ~76 m |
+
+Closest approach of the arrow to the aim point, integrated through the same math the physics engine uses (0.58 m envelope):
+
+| case | stock (zero-lead) | with fallback |
+|---|---|---|
+| thrown 26 m, target fleeing 6 m/s | 6.03 m miss | 0.05 m |
+| thrown 30 m, fleeing 6 m/s | 8.16 m | 0.25 m |
+| bow 60 m, fleeing 6 m/s | 8.97 m | 0.42 m |
+
+> **Known side effect.** No solution exists at the weapon's actual speed — that is precisely *why* the quartic failed — so the fallback velocity is necessarily faster than the weapon's `MaximumVelocity`. Measured within each weapon's real range against a target fleeing at 6 m/s: **thrown +10% at 22 m rising to +18%** at its ~35 m limit, **bows +10% at 55 m rising to +16%** at their ~76 m limit. Well under the engine's hard velocity cap of 50, but these long shots do land slightly sooner than a strict reading of the weapon's stated velocity implies. This only affects shots that currently miss 100% of the time.
+
+Note the two solvers in `Trajectory.cs` take **opposite gravity sign conventions** (`solve_ballistic_arc` wants positive-down; `solve_ballistic_arc_lateral` wants a signed acceleration). This is commented at the call site — worth knowing before touching that code.
+
+### Fix 4 — aim point (`missile_aim_center_mass`)
+
+Stock aim point is `target.Height / GetAimHeight()`, which for a player puts the **High** aim point at the exact top of the upper collision sphere and the **Medium** aim point in the gap between the two spheres. Both are low-tolerance spots:
+
+| attack height | stock aim z | stock lateral tolerance | center-mass | new tolerance |
+|---|---|---|---|---|
+| High | 1.835 m (top of head) | **0.318 m** | 0.75 × H = 1.376 m | **0.580 m** |
+| Medium | 0.918 m (waist gap) | **0.386 m** | 0.62 × H = 1.138 m | **0.540 m** |
+| Low | 0.612 m | 0.564 m | 0.27 × H = 0.495 m | 0.580 m |
+
+So stock high attacks have ~45% less lateral tolerance than low attacks for identical prediction error.
+
+**Player targets only.** The fractions are derived from the player collision model specifically. Monsters use a wide variety of setups — many are a single sphere where the existing `Height/2` is already center of mass — and reusing player-tuned fractions there would be a regression rather than a fix. Monster targets always use stock behavior regardless of this setting.
+
+The three fractions are tunable at runtime without a rebuild if you want to shift where arrows visibly land on the model.
+
+### Fix 5 — position broadcast rate (`player_update_position_threshold`)
+
+This one changes what the shooter **sees**, not what the server computes.
+
+Between forced broadcasts, every client dead-reckons other players from their `MoveToState`. Where the server's authoritative position drifts from what other clients are showing, a projectile aimed correctly at the server position can visibly fly at empty space on the shooter's screen. It also governs how much other players glitch around during powerslides.
+
+> ⚠️ **This property reaches less than its name suggests — read before tuning.** It gates only the **MoveToState-derived** broadcast path. Every **AutonomousPosition** packet from the client sets `RequestedLocationBroadcast` and broadcasts *unconditionally*, regardless of this setting:
+>
+> ```csharp
+> if (RequestedLocationBroadcast || DateTime.UtcNow - LastUpdatePosition >= MoveToState_UpdatePosition_Threshold)
+>     SendUpdatePosition();                                        // broadcast to everyone in range
+> else
+>     Session.Network.EnqueueSend(new GameMessageUpdatePosition(this));   // moving player only
+> ```
+>
+> Clients send AutonomousPosition continuously while moving, so a moving player's position is already broadcast far more often than once a second. This threshold is a **backstop for the gaps between autopos packets**, not the primary broadcast rate. The real drift window is bounded by the client's autopos cadence, not by this value.
+>
+> **Measure before tuning.** If the observed broadcast rate for a moving player is already 10+/s, lowering this changes almost nothing and only adds load. Effective broadcast rate is `min(autopos arrival rate, player physics tick rate)`.
+
+Cost scales as **(moving players) × (players who can see them)** — quadratic in a zerg. `GameMessageUpdatePosition` is 68 bytes of body (retail pcap max) plus ~16 bytes of fragment header. A 30-player siege with everyone moving and in range of each other is ~900 messages/s ≈ 75 KB/s at one broadcast per player per second; the same fight at 0.2 s would be ~4500 msg/s ≈ 378 KB/s **if** the threshold were the only source — in practice autopos already dominates, so the marginal cost of lowering it is much smaller than that ceiling, and so is the marginal benefit.
+
+If you do tune it, step to `0.33` first and measure the delta before considering `0.2`.
+
+**Test this one separately from the other three** — it improves perception rather than hit rate, and if you change it at the same time as a targeting fix you will not be able to tell a perception improvement from a hit-rate improvement in player reports.
+
+### War Magic Tracking — why none of the missile fixes apply
+
+The four missile fixes above are deliberately **not** applied to spell projectiles. Spells do not have any of the same defects:
+
+| Missile defect | Spell equivalent? |
+|---|---|
+| Stale firing solution (Fix 1) | **No.** `HandleCastSpell` → `CreateSpellProjectile` → `CalculateProjectileVelocity` → `LaunchSpellProjectiles` all run synchronously, *after* the windup animation has completed. There is no animation gap between solving and spawning. The only delay path is `spell.SpellDelay != 0` (delayed metaspells), which is intentional |
+| Zero-lead fallback (Fix 2) | **No.** Spells already use `solve_ballistic_arc_lateral`, which finds a solution whenever the horizontal intercept quadratic does. At 15 m/s against a ~6 m/s runner it always does. There is also an existing zero-velocity retry and a `dir * speed` final fallback |
+| Aim point on the envelope edge (Fix 4) | **No.** `ProjHeight = 2/3` puts the aim point at 1.223 m, which is 0.127 m from the upper collision sphere center — **0.566 m lateral tolerance out of a possible 0.580 m.** Already effectively optimal |
+
+**War magic is not under-tracking — it is the slowest projectile in the game.** Standard war bolts (`flamebolt` 1499, `lightningbolt` 1635, `shockwave` 1634) have `MaximumVelocity` **15 m/s**, against 18.6 for thrown and 24.9–27.3 for bows:
+
+| distance | war bolt flight (15 m/s) | bow flight (27.3 m/s) |
+|---|---|---|
+| 20 m | 1.33 s | 0.74 s |
+| 30 m | 2.00 s | 1.12 s |
+| 40 m | 2.67 s | 1.53 s |
+
+So war magic carries roughly **1.8× the prediction horizon of a bow** — a strafe reversal at 30 m displaces the predicted point by ~10 m for a bolt versus ~6 m for an arrow. Bolts being dodgeable is inherent to that speed, not a bug. Raising it means editing `MaximumVelocity` on the bolt weenies, which is a balance change, not a fix.
+
+Streak spells (`shockwavestreak` 7267 and friends) are 45 m/s and barely leadable at all by comparison.
+
+### "The bolt hit me but looked like it missed"
+
+The direct lever for this is the existing **`spell_projectile_ethereal`** property (default `false`), not `player_update_position_threshold`.
+
+With it **off**, the *client* runs its own collision for the bolt against its own dead-reckoned copy of the target. When client and server disagree on where the target was, the client's bolt sails past while the server registers a hit — exactly this symptom.
+
+With it **on**, spell projectiles are broadcast to clients as ethereal (`WorldObject_Networking.cs:304`), so the client never runs collision on them at all. The server sends an authoritative stop-velocity plus explode script on impact, and the visual matches the server's decision.
+
+Note this checks `this is SpellProjectile`, so it affects **war magic only** — arrows, bolts and thrown weapons are unaffected by it.
+
+A partial mitigation is already applied unconditionally in `SpellProjectile.ProjectileImpact()` — velocity is zeroed and a `GameMessageVectorUpdate` broadcast on impact, which the in-code comment notes also fixes ghost projectiles sailing through the target in default mode. Enabling ethereal mode is the fuller version of the same idea.
+
+### Suggested rollout order
+
+1. `missile_lead_fallback_log` alone — measure how often the zero-lead case actually fires on live, changing nothing.
+2. `missile_fresh_solution` — biggest win for thrown, near-free for bows.
+3. `missile_aim_center_mass` — widest hit envelope gain, especially on high attacks.
+4. `missile_lead_fallback` — fixes the "sometimes it doesn't lead at all" cases.
+5. `player_update_position_threshold` — separately, last, and watch bandwidth.
+
+### Related existing knobs
+
+| Property | Notes |
+|---|---|
+| `fast_missile_modifier` | Default `1.2`. Only applies to players who have the **UseFastMissiles** client option enabled. Prediction horizon scales as 1/speed, so this is the bluntest available lever |
+| `trajectory_alt_solver` | Default `false`. Switches missiles *and* spell projectiles to `Trajectory2`. **Bypasses Fix 2 entirely** — the fallback lives on the primary solver path |

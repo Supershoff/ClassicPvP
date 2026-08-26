@@ -8,7 +8,7 @@ VALUES (49090101,   1,    2048) /* ItemType - Gem */
      , (49090101,   5,       5) /* EncumbranceVal */
      , (49090101,  16,       8) /* ItemUseable - Contained */
      , (49090101,  18,       1) /* UiEffects - Magical */
-     , (49090101,  19,     50) /* Value - costs 100 Phials of Bloody Tears from Darkbeat */
+     , (49090101,  19,      20) /* Value - costs 20 Phials of Bloody Tears from Darkbeat */
      , (49090101,  33,       1) /* Bonded - Bonded */
      , (49090101,  93,    1044) /* PhysicsState - Ethereal, IgnoreCollisions, Gravity */
      , (49090101, 114,       1) /* Attuned - Attuned */;
@@ -23,7 +23,7 @@ VALUES (49090101,   1, False) /* Stuck */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (49090101,   1, 'Skill and Attribute Reset Gem') /* Name */
-     , (49090101,  16, 'This gem clears your quest stamps for the Temple of Enlightenment and the Temple of Forgetfulness, allowing you to re-access skill and attribute alteration. Each use costs an increasing number of PK Trophies, starting at 100 and growing exponentially. Bonded and Attuned.') /* LongDesc */;
+     , (49090101,  16, 'This gem clears your quest stamps for the Temple of Enlightenment and the Temple of Forgetfulness, allowing you to pick up a gem. Each use costs an increasing number of PK Trophies, starting at 100 and growing exponentially.') /* LongDesc */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (49090101,   1, 0x02000179) /* Setup */

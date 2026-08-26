@@ -30,8 +30,45 @@ namespace ACE.Database.Models.Log
         [NotMapped]
         public List<ArenaPlayer> Players { get; set; }
 
+        /// <summary>
+        /// True once the match has actually begun (status 4 or later).  Before that
+        /// the event is still in matchmaking, the pre-event countdown, or the
+        /// teleport-in countdown.
+        /// </summary>
         [NotMapped]
-        public string PlayersDisplay
+        public bool HasStarted => Status >= 4;
+
+        /// <summary>
+        /// The matchup as shown to players.  Until the match starts this deliberately
+        /// withholds names: a player who could see their draw during the pre-event
+        /// countdown could dodge a bad one by logging off or PK-tagging themselves,
+        /// which cancels the event before it starts and therefore costs them no
+        /// disqualification.  Once the match is underway the real names are shown.
+        ///
+        /// <para>Admin tooling reads <see cref="Players"/> directly and is unaffected.</para>
+        /// </summary>
+        [NotMapped]
+        public string PlayersDisplay => HasStarted ? PlayerNamesDisplay : ConcealedPlayersDisplay;
+
+        /// <summary>Head count only — no names, no team shape.</summary>
+        [NotMapped]
+        private string ConcealedPlayersDisplay
+        {
+            get
+            {
+                var count = Players?.Count ?? 0;
+                return count == 0
+                    ? "no players"
+                    : $"{count} player{(count == 1 ? "" : "s")} (names hidden until the match begins)";
+            }
+        }
+
+        /// <summary>
+        /// "A and B vs. C and D".  Private on purpose — everything player-facing goes
+        /// through <see cref="PlayersDisplay"/> so a pre-start matchup cannot leak.
+        /// </summary>
+        [NotMapped]
+        private string PlayerNamesDisplay
         {
             get
             {

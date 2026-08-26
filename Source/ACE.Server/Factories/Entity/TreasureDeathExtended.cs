@@ -12,6 +12,12 @@ namespace ACE.Server.Factories.Entity
         public TreasureHeritageGroup ForceHeritage { get; set; }
         public bool ForContainer { get; set; }
 
+        /// <summary>
+        /// Set when the loot is rolling for a creature that died inside an active Hot Dungeon.
+        /// Biases weapon damage/variance rolls and the item type mix (see LootGenerationFactory).
+        /// </summary>
+        public bool IsHotDungeon { get; set; }
+
         public bool AllowSpecialProperties = true;
 
         public TreasureDeathExtended()
@@ -25,6 +31,7 @@ namespace ACE.Server.Factories.Entity
             ForceWeaponType = other.ForceWeaponType;
             ForceHeritage = other.ForceHeritage;
             ForContainer = other.ForContainer;
+            IsHotDungeon = other.IsHotDungeon;
             AllowSpecialProperties = other.AllowSpecialProperties;
         }
 

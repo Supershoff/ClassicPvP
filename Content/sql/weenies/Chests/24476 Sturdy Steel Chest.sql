@@ -13,8 +13,8 @@ VALUES (24476,   1,        512) /* ItemType - Container */
      , (24476,  16,         48) /* ItemUseable - ViewedRemote */
      , (24476,  19,       2500) /* Value */
      , (24476,  38,       7500) /* ResistLockpick */
-     , (24476,  81,          4) /* MaxGeneratedObjects */
-     , (24476,  82,          4) /* InitGeneratedObjects */
+     , (24476,  81,          3) /* MaxGeneratedObjects */
+     , (24476,  82,          3) /* InitGeneratedObjects */
      , (24476,  83,          2) /* ActivationResponse - Use */
      , (24476,  93,       1048) /* PhysicsState - ReportCollisions, IgnoreCollisions, Gravity */
      , (24476,  96,        500) /* EncumbranceCapacity */

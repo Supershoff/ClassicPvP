@@ -1102,6 +1102,10 @@ namespace ACE.Server.WorldObjects
             //Arena overtime nerfs drains/transfers to the target
             bool isArenaOvertime = false;
             var arenaOvertimeDrainMod = 1.0f;
+
+            //Arena 1v1 events scale the effectiveness of drain health spells
+            var arena1v1DrainHealthMod = 1.0f;
+
             if (targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
             {
                 var arenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
@@ -1110,6 +1114,9 @@ namespace ACE.Server.WorldObjects
                     isArenaOvertime = true;
                     arenaOvertimeDrainMod = arenaEvent.OvertimeHealingModifier * 0.25f;
                 }
+
+                if (arenaEvent != null && arenaEvent.EventType != null && arenaEvent.EventType.Equals("1v1", StringComparison.OrdinalIgnoreCase))
+                    arena1v1DrainHealthMod = (float)PropertyManager.GetDouble("arena_1v1_drain_health_mod").Item;
             }
 
             // prevent double deaths from indirect casts
@@ -1136,6 +1143,10 @@ namespace ACE.Server.WorldObjects
 
             if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
                 srcVitalChange = (uint)spell.TransferCap;
+
+            // Arena 1v1 drain health modifier, scales both the health drained from the target and the amount transferred to the caster
+            if (isDrain && spell.Source == PropertyAttribute2nd.Health && arena1v1DrainHealthMod != 1.0f)
+                srcVitalChange = (uint)Math.Round(srcVitalChange * arena1v1DrainHealthMod);
 
             if (isDrain && Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.CustomDM)
             {

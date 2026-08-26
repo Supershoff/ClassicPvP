@@ -24,111 +24,116 @@ namespace ACE.Database
         }
 
         // -----------------------------------------------------------------------
-        // Composite score (1v1 and 2v2 individual)
+        // Leaderboard score (1v1, 2v2 individual, 2v2 teams)
         // -----------------------------------------------------------------------
-
-        /// <summary>Added to composite score per ranked win.</summary>
-        public const uint WinBonus = 8;
-
-        /// <summary>Added to composite score per ranked match played.</summary>
-        public const uint MatchBonus = 2;
-
-        /// <summary>
-        /// Added to composite score each time a 2v2 player survived the match
-        /// (was not eliminated) as part of the winning team.
-        /// </summary>
-        public const uint SurviveBonus = 30;
+        //
+        // The leaderboard score IS the ELO rating.  Activity counters (wins,
+        // matches played, 2v2 survivals) no longer contribute — activity is
+        // rewarded through the decay tiers below instead, which let an active
+        // player hold a rating that an inactive one bleeds away.
 
         // -----------------------------------------------------------------------
         // ELO decay (persisted to the database once per day by ArenaManager)
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// Number of consecutive days without a match in the same event category
-        /// before ELO decay begins.  Playing a 2v2 does NOT reset the 1v1 decay
-        /// clock and vice versa — each category is tracked independently.
+        /// Starting ELO, and the baseline decay works against.  Only the portion of
+        /// a rating above this value decays, and no amount of decay drops a rating
+        /// below it.
         /// </summary>
-        public const int EloDecayGracePeriodDays = 3;
+        public const uint EloBaseline = 1500;
+
+        /// <summary>How far back the activity window for the decay tiers reaches.</summary>
+        public const int EloDecayWindowDays = 7;
 
         /// <summary>
-        /// Fractional ELO reduction applied per day once the grace period expires.
-        /// 0.03 = 3% per day.
+        /// Daily decay tiers for 1v1, keyed by how many 1v1 matches the player
+        /// completed in the last <see cref="EloDecayWindowDays"/> days.  The first
+        /// tier whose threshold the match count falls under wins; a count at or
+        /// above the last threshold decays nothing.
         /// </summary>
-        public const double EloDecayRatePerDay = 0.03;
-
-        /// <summary>Minimum ELO after decay.  Players never fall below this value.</summary>
-        public const uint EloFloor = 1500;
-
-        /// <summary>
-        /// Computes how many full days of decay are due and returns the updated ELO
-        /// and the new last-decay timestamp.  Returns null when no decay is owed yet.
-        ///
-        /// <para>Decay begins after <see cref="EloDecayGracePeriodDays"/> days of
-        /// inactivity within the same event category.  Each day of decay reduces the
-        /// stored ELO by <see cref="EloDecayRatePerDay"/>, floored at
-        /// <see cref="EloFloor"/>.</para>
-        ///
-        /// <para>The caller is responsible for persisting both the new ELO and the
-        /// returned timestamp.  <paramref name="lastDecayDatetime"/> must be stored so
-        /// that subsequent calls do not double-apply decay for the same days.</para>
-        ///
-        /// <para>The returned <c>newLastDecayDatetime</c> is advanced by exactly the
-        /// number of integer days processed (not by DateTime.Now) to prevent drift
-        /// when the job fires at slightly different times each day.</para>
-        /// </summary>
-        public static (uint newElo, DateTime newLastDecayDatetime)? ComputeAndApplyDecay(
-            uint currentElo, DateTime? lastMatchDatetime, DateTime? lastDecayDatetime)
+        private static readonly (int maxMatchesExclusive, double rate)[] DecayTiers1v1 =
         {
-            if (!lastMatchDatetime.HasValue || currentElo <= EloFloor)
-                return null;
+            ( 1, 0.05),   // no matches at all
+            ( 3, 0.03),   // 1 - 2 matches
+            (10, 0.01),   // 3 - 9 matches
+            // 10+ matches — no decay
+        };
 
-            var decayStartDate = lastMatchDatetime.Value.AddDays(EloDecayGracePeriodDays);
-            var now = DateTime.Now;
+        /// <summary>
+        /// Daily decay tiers for 2v2.  Gentler than 1v1 and reaching zero sooner,
+        /// because the format draws fewer players and a partner has to be available.
+        /// </summary>
+        private static readonly (int maxMatchesExclusive, double rate)[] DecayTiers2v2 =
+        {
+            (1, 0.03),    // no matches at all
+            (3, 0.01),    // 1 - 2 matches
+            // 3+ matches — no decay
+        };
 
-            if (now < decayStartDate)
-                return null; // still within the grace period
+        /// <summary>
+        /// Returns the fraction of the above-baseline rating that decays today for a
+        /// player with <paramref name="matchesLast7Days"/> completed matches in that
+        /// same event category.  Matches in another category do not count.
+        /// </summary>
+        public static double GetDailyDecayRate(string eventType, int matchesLast7Days)
+        {
+            var tiers = eventType == "2v2" ? DecayTiers2v2 : DecayTiers1v1;
 
-            // Start counting from the later of: when decay should have begun, or
-            // when decay was last applied (so we never double-count days).
-            var countFrom = lastDecayDatetime.HasValue && lastDecayDatetime.Value > decayStartDate
-                ? lastDecayDatetime.Value
-                : decayStartDate;
+            foreach (var tier in tiers)
+            {
+                if (matchesLast7Days < tier.maxMatchesExclusive)
+                    return tier.rate;
+            }
 
-            int decayDays = (int)Math.Floor((now - countFrom).TotalDays);
-            if (decayDays <= 0)
-                return null; // no full day has elapsed since last decay run
-
-            double decayed = currentElo * Math.Pow(1.0 - EloDecayRatePerDay, decayDays);
-            uint newElo = (uint)Math.Max(EloFloor, Math.Round(decayed));
-            DateTime newLastDecay = countFrom.AddDays(decayDays);
-
-            return (newElo, newLastDecay);
+            return 0.0;
         }
 
         /// <summary>
-        /// Computes the full composite leaderboard score for a 1v1 or 2v2
-        /// individual stats row.  ELO decay is applied daily by the background job
-        /// and already reflected in <see cref="ArenaCharacterStats.Elo"/>, so no
-        /// additional decay computation is needed here.
-        /// Never call this for FFA or Tugak.
+        /// Applies one day of decay and returns the new ELO, or null when nothing is
+        /// owed (rating at or below the baseline, an activity tier that does not
+        /// decay, or a change too small to move the stored value).
+        ///
+        /// <para>Decay is taken from the rating *above* <see cref="EloBaseline"/>, not
+        /// from the whole rating: at 1800 with no matches in the last week, a 5% 1v1
+        /// tier removes 5% of 300, so 15 points, not 90.</para>
+        ///
+        /// <para>The caller persists the result and is responsible for running this at
+        /// most once per calendar day per row.</para>
+        /// </summary>
+        public static uint? ApplyDailyDecay(uint currentElo, string eventType, int matchesLast7Days)
+        {
+            if (currentElo <= EloBaseline)
+                return null;
+
+            double rate = GetDailyDecayRate(eventType, matchesLast7Days);
+            if (rate <= 0.0)
+                return null;
+
+            double excess  = currentElo - EloBaseline;
+            uint   newElo  = (uint)Math.Max((double)EloBaseline, Math.Round(EloBaseline + excess * (1.0 - rate)));
+
+            return newElo == currentElo ? (uint?)null : newElo;
+        }
+
+        /// <summary>
+        /// Leaderboard score for a 1v1 or 2v2 individual stats row: the ELO rating
+        /// itself.  Decay is applied daily by the background job and already written
+        /// back to <see cref="ArenaCharacterStats.Elo"/>, so no run-time adjustment is
+        /// needed here.  Never call this for FFA or Tugak.
         /// </summary>
         public static uint ComputeCompositeScore(ArenaCharacterStats stats)
         {
-            return stats.Elo
-                + stats.TotalWins     * WinBonus
-                + stats.TotalMatches  * MatchBonus
-                + stats.TotalSurvived * SurviveBonus;
+            return stats.Elo;
         }
 
         /// <summary>
-        /// Computes the full composite leaderboard score for a 2v2 team stats row.
+        /// Leaderboard score for a 2v2 team stats row: the team's ELO rating.
+        /// Team ratings do not decay.
         /// </summary>
         public static uint ComputeCompositeScore(ArenaTeamStats stats)
         {
-            return stats.Elo
-                + stats.TotalWins     * WinBonus
-                + stats.TotalMatches  * MatchBonus
-                + stats.TotalSurvived * SurviveBonus;
+            return stats.Elo;
         }
 
         // -----------------------------------------------------------------------

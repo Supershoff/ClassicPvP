@@ -199,9 +199,25 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                // update existing quest
-                quest.LastTimeCompleted = (uint)Time.GetUnixTime();
-                quest.NumTimesCompleted++;
+                if (IsWindowedQuest(questName))
+                {
+                    // LastTimeCompleted is the window start for these, so it only moves when a new window opens
+                    var worldQuest = DatabaseManager.World.GetCachedQuest(questName);
+
+                    if (worldQuest != null && !IsWindowExpired(worldQuest, quest))
+                        quest.NumTimesCompleted++;
+                    else
+                    {
+                        quest.LastTimeCompleted = (uint)Time.GetUnixTime();
+                        quest.NumTimesCompleted = 1;
+                    }
+                }
+                else
+                {
+                    // update existing quest
+                    quest.LastTimeCompleted = (uint)Time.GetUnixTime();
+                    quest.NumTimesCompleted++;
+                }
 
                 if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): updated quest ({quest.NumTimesCompleted})");
 
@@ -263,6 +279,47 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns TRUE if player can solve this quest now
         /// </summary>
+        /// <summary>
+        /// Quests where MaxSolves is a per-window allowance instead of a lifetime cap.
+        /// The player may solve one of these up to MaxSolves times inside each MinDelta window,
+        /// and the window opens on the first solve. For these quests LastTimeCompleted records
+        /// the start of the current window rather than the most recent solve.
+        /// </summary>
+        private static readonly HashSet<string> WindowedQuests = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "CombatSkillAlterationGemPickedUp",
+        };
+
+        public static bool IsWindowedQuest(string questName)
+        {
+            return WindowedQuests.Contains(questName);
+        }
+
+        /// <summary>
+        /// Returns TRUE if the player's current window for a windowed quest has run out,
+        /// meaning the next solve starts a fresh window with the allowance reset.
+        /// </summary>
+        private static bool IsWindowExpired(Database.Models.World.Quest quest, Database.Models.Shard.CharacterPropertiesQuestRegistry playerQuest)
+        {
+            return (uint)Time.GetUnixTime() >= playerQuest.LastTimeCompleted + GetEffectiveMinDelta(quest);
+        }
+
+        /// <summary>
+        /// The quest's MinDelta after the server-wide quest_mindelta_rate scaling is applied.
+        /// </summary>
+        private static uint GetEffectiveMinDelta(Database.Models.World.Quest quest)
+        {
+            if (!CanScaleQuestMinDelta(quest))
+                return quest.MinDelta;
+
+            var scaledMinDelta = (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate", 1).Item);
+
+            if (scaledMinDelta != quest.MinDelta)
+                scaledMinDelta = Math.Max(scaledMinDelta, (uint)PropertyManager.GetLong("quest_mindelta_rate_shortest", 0).Item);
+
+            return scaledMinDelta;
+        }
+
         public bool CanSolve(string questFormat)
         {
             var questName = GetQuestName(questFormat);
@@ -285,6 +342,9 @@ namespace ACE.Server.Managers
 
             var playerQuest = GetQuest(questName);
             if (playerQuest == null) return false;  // player hasn't completed this quest yet
+
+            // a windowed quest is never permanently maxed - its allowance refreshes each window
+            if (IsWindowedQuest(questName)) return false;
 
             // return TRUE if quest has solve limit, and it has been reached
             return quest.MaxSolves > -1 && playerQuest.NumTimesCompleted >= quest.MaxSolves;
@@ -371,6 +431,18 @@ namespace ACE.Server.Managers
             var playerQuest = GetQuest(questName);
             if (playerQuest == null)
                 return TimeSpan.MinValue;   // player hasn't completed this quest yet - can solve immediately
+
+            if (IsWindowedQuest(questName))
+            {
+                if (IsWindowExpired(quest, playerQuest))
+                    return TimeSpan.MinValue;   // window has run out - next solve opens a fresh one
+
+                if (quest.MaxSolves < 0 || playerQuest.NumTimesCompleted < quest.MaxSolves)
+                    return TimeSpan.MinValue;   // allowance remaining in the current window
+
+                // allowance spent - wait out the remainder of the window
+                return TimeSpan.FromSeconds(playerQuest.LastTimeCompleted + GetEffectiveMinDelta(quest) - (uint)Time.GetUnixTime());
+            }
 
             if (quest.MaxSolves > -1 && playerQuest.NumTimesCompleted >= quest.MaxSolves)
                 return TimeSpan.MaxValue;   // cannot solve this quest again - max solves reached / exceeded

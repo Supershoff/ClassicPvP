@@ -1319,6 +1319,12 @@ namespace ACE.Server.WorldObjects.Managers
 
             // this function produces a similar value to the original ACE function,
             // but is using the actual retail calculation method
+
+            // inside an arena landblock — or on an ArenaTestTarget — the arena variant of the
+            // reduction replaces the global one
+            var isArena = WorldObject is Player ratingTarget &&
+                (ArenaLocation.IsArenaLandblock(ratingTarget.Location.Landblock) || ratingTarget.ArenaTestTarget);
+
             var totalBaseDamage = 0.0f;
             foreach (var netherDot in netherDots)
             {
@@ -1330,7 +1336,7 @@ namespace ACE.Server.WorldObjects.Managers
                 // in PvP, scale the base damage used for rating by pvp_dmg_mod_void_dot_rating_reduction
                 if (netherDot.IsPvP)
                 {
-                    var pvpDotRatingMod = PropertyManager.GetDouble("pvp_dmg_mod_void_dot_rating_reduction").Item;
+                    var pvpDotRatingMod = isArena ? PropertyManager.GetDouble("pvp_dmg_mod_arena_void_dot_rating_reduction").Item : PropertyManager.GetDouble("pvp_dmg_mod_void_dot_rating_reduction").Item;
                     baseDmgForThisDot = baseDmgForThisDot * (float)pvpDotRatingMod;
                 }
 
@@ -1578,8 +1584,16 @@ namespace ACE.Server.WorldObjects.Managers
 
             var targetPlayer = WorldObject as Player;
 
+            // Resolved once for the whole tick: inside an arena landblock the pvp_dmg_mod_arena_*
+            // values replace their global counterparts, and the two sets never stack.
+            var isArenaLandblock = targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock);
+
+            // ArenaTestTarget redirects only the damage config lookups (see Player.ArenaTestTarget);
+            // the arena event gating and overtime rules below stay on isArenaLandblock.
+            var isArena = isArenaLandblock || (targetPlayer != null && targetPlayer.ArenaTestTarget);
+
             //Arenas - If this is an arena landblock, don't allow any DoT dmg except while the event is in a started status (Status == 4)
-            if (targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
+            if (isArenaLandblock)
             {
                 var preMatchArenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
                 if (preMatchArenaEvent == null || preMatchArenaEvent.Status != 4 || preMatchArenaEvent.EventType.Equals("tugak"))
@@ -1656,12 +1670,11 @@ namespace ACE.Server.WorldObjects.Managers
                     //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
                     //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
 
-                    // flat pvp void dot multiplier
-                    var pvpFlatDotMod = 1.0f;
-                    if (isPvP && damageType == DamageType.Nether)
-                        pvpFlatDotMod = (float)PropertyManager.GetDouble("pvp_dmg_mod_void_dot").Item;
+                    // note: the flat pvp void dot multiplier is NOT applied here — it is applied per
+                    // tick below, outside the cache, so that it tracks the target's current landblock
+                    // (and so it is not lost when CacheDamageTick populated the cache instead)
 
-                    tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * pvpFlatDotMod;
+                    tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod;
 
                     // additional modifier for hybrid void characters in pvp (attacker has trained/specialized melee or war magic skills)
                     if (isPvP && damageType == DamageType.Nether)
@@ -1701,8 +1714,15 @@ namespace ACE.Server.WorldObjects.Managers
                     enchantment.CachedModifiedStatModValue = tickAmount;
                 }
 
+                // Flat pvp void DoT multiplier, applied after the cache lookup so it is not baked into
+                // the cached value: it has to follow the target's current landblock, and both cache
+                // fill paths (CacheDamageTick and the branch above) have to end up with it applied.
+                // In an arena, pvp_dmg_mod_arena_void_dot is used in place of pvp_dmg_mod_void_dot.
+                if (targetPlayer != null && damager is Player && damageType == DamageType.Nether)
+                    tickAmount *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_void_dot").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_void_dot").Item;
+
                 //Arena overtime reduces DoT dmg (applied after the cache lookup so it is not baked into the cached value)
-                if (targetPlayer != null && ArenaLocation.IsArenaLandblock(targetPlayer.Location.Landblock))
+                if (isArenaLandblock)
                 {
                     var overtimeArenaEvent = ArenaManager.GetArenaEventByLandblock(targetPlayer.Location.Landblock);
                     if (overtimeArenaEvent != null && overtimeArenaEvent.IsOvertime)

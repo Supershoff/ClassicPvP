@@ -604,218 +604,229 @@ namespace ACE.Server.Entity
                     {
                         float config_mod = 1.0f;
 
+                        // When the defender is standing in an arena landblock, every mod below is
+                        // read from the pvp_dmg_mod_arena_* set instead of the global one — the two
+                        // never stack. Landblock only: no arena event needs to be running and event
+                        // membership is not checked, so this stays a single set lookup per hit.
+                        var isArenaLandblock = playerDefender != null && ArenaLocation.IsArenaLandblock(playerDefender.Location.Landblock);
+
+                        // ArenaTestTarget lets an admin exercise the arena configs outside an arena.
+                        // It only redirects the config lookups below — arena event rules keep using
+                        // isArenaLandblock so a flagged player is not treated as being in a match.
+                        var isArena = isArenaLandblock || (playerDefender != null && playerDefender.ArenaTestTarget);
+
                         // ── base per-skill mod ────────────────────────────────────────────────
                         switch (Weapon.WeaponSkill)
                         {
                             // EoR consolidated skills
                             case Skill.FinesseWeapons:
-                                config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_fw").Item;
+                                config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw").Item;
                                 break;
                             case Skill.LightWeapons:
-                                config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_lw").Item;
+                                config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw").Item;
                                 if (Weapon.W_AttackType == AttackType.TripleStrike)
-                                    config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_triplestrike").Item;
+                                    config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_triplestrike").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_triplestrike").Item;
                                 break;
                             case Skill.HeavyWeapons:
-                                config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_hw").Item;
+                                config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw").Item;
                                 if (AttackType.MultiStrike.HasFlag(Weapon.W_AttackType))
-                                    config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_multistrike").Item;
+                                    config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_multistrike").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_multistrike").Item;
                                 break;
                             case Skill.TwoHandedCombat:
-                                config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_2h").Item;
+                                config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h").Item;
                                 break;
                             case Skill.MissileWeapons:
-                                if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_bow").Item;
-                                else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow").Item;
-                                else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_tw").Item;
+                                if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow").Item;
+                                else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow").Item;
+                                else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw").Item;
                                 break;
                             // Infiltration individual weapon skills
-                            case Skill.Sword:    config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_sword").Item;   break;
-                            case Skill.Mace:     config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_mace").Item;    break;
-                            case Skill.Axe:      config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_axe").Item;     break;
-                            case Skill.Spear:    config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_spear").Item;   break;
-                            case Skill.Staff:    config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_staff").Item;   break;
-                            case Skill.Dagger:   config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger").Item;  break;
-                            case Skill.UnarmedCombat: config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed").Item; break;
-                            case Skill.Bow:      config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_bow").Item;     break;
-                            case Skill.Crossbow: config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow").Item;    break;
-                            case Skill.ThrownWeapon: config_mod = (float)PropertyManager.GetDouble("pvp_dmg_mod_tw").Item;  break;
+                            case Skill.Sword:    config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword").Item;           break;
+                            case Skill.Mace:     config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace").Item;             break;
+                            case Skill.Axe:      config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe").Item;               break;
+                            case Skill.Spear:    config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear").Item;           break;
+                            case Skill.Staff:    config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff").Item;           break;
+                            case Skill.Dagger:   config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger").Item;         break;
+                            case Skill.UnarmedCombat: config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed").Item;  break;
+                            case Skill.Bow:      config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow").Item;               break;
+                            case Skill.Crossbow: config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow").Item;             break;
+                            case Skill.ThrownWeapon: config_mod = isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw").Item;             break;
                         }
 
                         // ── imbued-effect mods ────────────────────────────────────────────────
                         if (Weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
                         {
-                            config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_ar").Item;
+                            config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_ar").Item;
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR
-                                case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_ar").Item;    break;
-                                case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_ar").Item;    break;
-                                case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_ar").Item;    break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_ar").Item;    break;
+                                case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_ar").Item;  break;
+                                case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_ar").Item;  break;
+                                case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_ar").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_ar").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_ar").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_ar").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_ar").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_ar").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_ar").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_ar").Item;
                                     break;
                                 // Infiltration
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_ar").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_ar").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_ar").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_ar").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_ar").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_ar").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_ar").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_ar").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_ar").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_ar").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_ar").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_ar").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_ar").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_ar").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_ar").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_ar").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_ar").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_ar").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_ar").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_ar").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_ar").Item;            break;
                             }
                         }
                         else if (Weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
                         {
-                            config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_cb").Item;
+                            config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_cb").Item;
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR
-                                case Skill.FinesseWeapons:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cb").Item;  break;
+                                case Skill.FinesseWeapons:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cb").Item;  break;
                                 case Skill.LightWeapons:
-                                    config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb").Item;
+                                    config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb").Item;
                                     if (Weapon.W_AttackType == AttackType.TripleStrike && IsCritical)
-                                        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb_crit_triplestrike").Item;
+                                        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_cb_crit_triplestrike").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb_crit_triplestrike").Item;
                                     break;
                                 case Skill.HeavyWeapons:
-                                    config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb").Item;
+                                    config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb").Item;
                                     if (AttackType.MultiStrike.HasFlag(Weapon.W_AttackType) && IsCritical)
-                                        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb_crit_multistrike").Item;
+                                        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_cb_crit_multistrike").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb_crit_multistrike").Item;
                                     break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cb").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cb").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb").Item;
                                     break;
                                 // Infiltration
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cb").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cb").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cb").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cb").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cb").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cb").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cb").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cb").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cb").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cb").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cb").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cb").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cb").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cb").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cb").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb").Item;            break;
                             }
                             if (IsCritical)
                             {
                                 switch (Weapon.WeaponSkill)
                                 {
                                     // EoR
-                                    case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cb_crit").Item;   break;
-                                    case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb_crit").Item;   break;
-                                    case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb_crit").Item;   break;
-                                    case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cb_crit").Item;   break;
+                                    case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cb_crit").Item;  break;
+                                    case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cb_crit").Item;  break;
+                                    case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cb_crit").Item;  break;
+                                    case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cb_crit").Item;  break;
                                     case Skill.MissileWeapons:
-                                        if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb_crit").Item;
-                                        else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb_crit").Item;
-                                        else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb_crit").Item;
+                                        if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb_crit").Item;
+                                        else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb_crit").Item;
+                                        else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb_crit").Item;
                                         break;
                                     // Infiltration
-                                    case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cb_crit").Item;    break;
-                                    case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cb_crit").Item;     break;
-                                    case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cb_crit").Item;      break;
-                                    case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cb_crit").Item;    break;
-                                    case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cb_crit").Item;    break;
-                                    case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cb_crit").Item;   break;
-                                    case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cb_crit").Item;  break;
-                                    case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb_crit").Item;      break;
-                                    case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb_crit").Item;     break;
-                                    case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb_crit").Item;      break;
+                                    case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cb_crit").Item;      break;
+                                    case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cb_crit").Item;        break;
+                                    case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cb_crit").Item;          break;
+                                    case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cb_crit").Item;      break;
+                                    case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cb_crit").Item;      break;
+                                    case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cb_crit").Item;    break;
+                                    case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cb_crit").Item;  break;
+                                    case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cb_crit").Item;          break;
+                                    case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cb_crit").Item;        break;
+                                    case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cb_crit").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cb_crit").Item;            break;
                                 }
                             }
                         }
                         else if (Weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
                         {
-                            config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_cs").Item;
+                            config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_cs").Item;
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR
-                                case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cs").Item;   break;
-                                case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cs").Item;   break;
-                                case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cs").Item;   break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cs").Item;   break;
+                                case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_cs").Item;  break;
+                                case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_cs").Item;  break;
+                                case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_cs").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_cs").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cs").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cs").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cs").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cs").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cs").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cs").Item;
                                     break;
                                 // Infiltration
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cs").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cs").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cs").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cs").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cs").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cs").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cs").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cs").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cs").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cs").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_cs").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_cs").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_cs").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_cs").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_cs").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_cs").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_cs").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_cs").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_cs").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_cs").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_cs").Item;            break;
                             }
                         }
                         else if (Weapon.IgnoreMagicArmor && Weapon.IgnoreMagicResist)
                         {
-                            config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hollow").Item;
+                            config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hollow").Item;
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR
-                                case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_hollow").Item;   break;
-                                case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_hollow").Item;   break;
-                                case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_hollow").Item;   break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_hollow").Item;   break;
+                                case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_hollow").Item;  break;
+                                case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_hollow").Item;  break;
+                                case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_hollow").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_hollow").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_hollow").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_hollow").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_hollow").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_hollow").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_hollow").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_hollow").Item;
                                     break;
                                 // Infiltration
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_hollow").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_hollow").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_hollow").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_hollow").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_hollow").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_hollow").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_hollow").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_hollow").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_hollow").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_hollow").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_hollow").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_hollow").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_hollow").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_hollow").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_hollow").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_hollow").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_hollow").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_hollow").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_hollow").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_hollow").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_hollow").Item;            break;
                             }
                         }
                         else if (Weapon.HasImbuedEffect(ImbuedEffectType.IgnoreAllArmor))
                         {
-                            config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_phantom").Item;
+                            config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_phantom").Item;
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR
-                                case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_phantom").Item;   break;
-                                case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_phantom").Item;   break;
-                                case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_phantom").Item;   break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_phantom").Item;   break;
+                                case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_phantom").Item;  break;
+                                case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_phantom").Item;  break;
+                                case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_phantom").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_phantom").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_phantom").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_phantom").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_phantom").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_phantom").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_phantom").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_phantom").Item;
                                     break;
                                 // Infiltration
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_phantom").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_phantom").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_phantom").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_phantom").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_phantom").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_phantom").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_phantom").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_phantom").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_phantom").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_phantom").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_phantom").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_phantom").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_phantom").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_phantom").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_phantom").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_phantom").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_phantom").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_phantom").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_phantom").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_phantom").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_phantom").Item;            break;
                             }
                         }
 
@@ -827,39 +838,32 @@ namespace ACE.Server.Entity
                             switch (Weapon.WeaponSkill)
                             {
                                 // EoR consolidated skills
-                                case Skill.FinesseWeapons:   config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_weeping").Item;    break;
-                                case Skill.LightWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_weeping").Item;    break;
-                                case Skill.HeavyWeapons:     config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_weeping").Item;    break;
-                                case Skill.TwoHandedCombat:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_weeping").Item;    break;
+                                case Skill.FinesseWeapons:   config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_fw_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_fw_weeping").Item;  break;
+                                case Skill.LightWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_lw_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_lw_weeping").Item;  break;
+                                case Skill.HeavyWeapons:     config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_hw_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_hw_weeping").Item;  break;
+                                case Skill.TwoHandedCombat:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_2h_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_2h_weeping").Item;  break;
                                 case Skill.MissileWeapons:
-                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_weeping").Item;
-                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_weeping").Item;
-                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_weeping").Item;
+                                    if (Weapon.DefaultCombatStyle == CombatStyle.Bow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_weeping").Item;
+                                    else if (Weapon.DefaultCombatStyle == CombatStyle.Crossbow) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_weeping").Item;
+                                    else if (Weapon.IsThrownWeapon || Weapon.IsAtlatl) config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_weeping").Item;
                                     break;
                                 // Infiltration individual weapon skills
-                                case Skill.Sword:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_weeping").Item;    break;
-                                case Skill.Mace:          config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_weeping").Item;     break;
-                                case Skill.Axe:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_weeping").Item;      break;
-                                case Skill.Spear:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_weeping").Item;    break;
-                                case Skill.Staff:         config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_weeping").Item;    break;
-                                case Skill.Dagger:        config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_weeping").Item;   break;
-                                case Skill.UnarmedCombat: config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_weeping").Item;  break;
-                                case Skill.Bow:           config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_weeping").Item;      break;
-                                case Skill.Crossbow:      config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_weeping").Item;     break;
-                                case Skill.ThrownWeapon:  config_mod *= (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_weeping").Item;      break;
+                                case Skill.Sword:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_sword_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_sword_weeping").Item;      break;
+                                case Skill.Mace:          config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_mace_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_mace_weeping").Item;        break;
+                                case Skill.Axe:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_axe_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_axe_weeping").Item;          break;
+                                case Skill.Spear:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_spear_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_spear_weeping").Item;      break;
+                                case Skill.Staff:         config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_staff_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_staff_weeping").Item;      break;
+                                case Skill.Dagger:        config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_dagger_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_dagger_weeping").Item;    break;
+                                case Skill.UnarmedCombat: config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_unarmed_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_unarmed_weeping").Item;  break;
+                                case Skill.Bow:           config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_bow_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_bow_weeping").Item;          break;
+                                case Skill.Crossbow:      config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_xbow_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_xbow_weeping").Item;        break;
+                                case Skill.ThrownWeapon:  config_mod *= isArena ? (float)PropertyManager.GetDouble("pvp_dmg_mod_arena_tw_weeping").Item : (float)PropertyManager.GetDouble("pvp_dmg_mod_tw_weeping").Item;            break;
                             }
                         }
 
-                        // apply arena 1v1 global damage modifier; block damage from observers
-                        if (playerDefender != null && ArenaLocation.IsArenaLandblock(playerDefender.Location.Landblock))
-                        {
-                            if (playerAttacker != null && playerAttacker.IsArenaObserver)
-                                config_mod = 0;
-
-                            var arenaEvent = ArenaManager.GetArenaEventByLandblock(playerDefender.Location.Landblock);
-                            if (arenaEvent != null && arenaEvent.EventType != null && arenaEvent.EventType.Equals("1v1", StringComparison.OrdinalIgnoreCase))
-                                config_mod *= (float)PropertyManager.GetDouble("arena_1v1_global_dmg_mod").Item;
-                        }
+                        // block damage from arena observers
+                        if (isArenaLandblock && playerAttacker != null && playerAttacker.IsArenaObserver)
+                            config_mod = 0;
 
                         Damage = Damage * config_mod;
                     }
@@ -950,8 +954,13 @@ namespace ACE.Server.Entity
                 // Only PK players may harm the stone; everyone else takes their own hit back.
                 // Checked here rather than up front so the reflected amount is a real damage
                 // number, and before the mods below so the attacker eats the undiminished hit.
+                // Callers read the Damage field (the method's return value is discarded), so we must
+                // zero the field — not just return 0 — to actually deal no damage to the stone.
                 if (bindstoneProxy.TryReflectNonPkAttack(attacker, DamageType, Damage))
+                {
+                    Damage = 0.0f;
                     return 0.0f;
+                }
 
                 var isMissile = Weapon != null &&
                     (Weapon.WeaponSkill == Skill.Bow || Weapon.WeaponSkill == Skill.Crossbow || Weapon.WeaponSkill == Skill.ThrownWeapon);
@@ -960,8 +969,12 @@ namespace ACE.Server.Entity
                 Damage *= AllegianceHometownManager.GetDistanceMultiplier((float)defender.Location.DistanceTo(attacker.Location));
 
                 // Defenders mend the stone instead of damaging it: heal 10% of the would-be damage, deal none.
+                // Zero the Damage field (not just the return) so the mended hit lands no damage on the stone.
                 if (bindstoneProxy.TryApplyDefenderHeal(attacker, Damage))
+                {
+                    Damage = 0.0f;
                     return 0.0f;
+                }
 
                 // Anti-"peacing": while any non-attacker lingers near the stone, attacker damage is cut sharply
                 // (default 90%), forcing attackers to clear defenders off the stone before they can burn it down.

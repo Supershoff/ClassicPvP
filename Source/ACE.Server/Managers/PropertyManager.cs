@@ -644,6 +644,12 @@ namespace ACE.Server.Managers
                 ("show_first_login_gift", new Property<bool>(false, "if TRUE, will show on first login that the player earned bonus item (Blackmoor's Favor and/or Asheron's Benediction), disabled by default because msg is kind of odd on an emulator")),
                 ("show_mana_conv_bonus_0", new Property<bool>(true, "if disabled, only shows mana conversion bonus if not zero, during appraisal of casting items")),
                 ("smite_uses_takedamage", new Property<bool>(false, "if enabled, smite applies damage via TakeDamage")),
+
+                // --- missile tracking experiments (each independently toggleable for A/B testing) ---
+                ("missile_fresh_solution", new Property<bool>(false, "MISSILE FIX 1: if enabled, the projectile firing solution (velocity / spawn origin / orientation) is recalculated at the instant the projectile spawns, instead of before the turn + aim animation. removes 0.03-0.57s of staleness for bows, a flat 0.378s for thrown weapons, plus rotate time on repeat attacks")),
+                ("missile_lead_fallback", new Property<bool>(false, "MISSILE FIX 2: if enabled, when the quartic intercept solver finds no solution against a moving target, fall back to the lateral solver (the one spell projectiles use) instead of silently dropping to a zero-lead stationary aim. affects thrown weapons past ~21-30m and bows past ~51-61m vs a fleeing target")),
+                ("missile_lead_fallback_log", new Property<bool>(false, "MISSILE FIX 2 diagnostics: log every time the quartic intercept solver fails to find a solution, and which fallback was used. noisy - for testing only")),
+                ("missile_aim_center_mass", new Property<bool>(false, "MISSILE FIX 4: if enabled, missile attacks against PLAYER targets aim at the center of the target's collision spheres rather than at the top of the head / the gap between spheres. raises lateral hit tolerance from 0.318m to 0.580m for high attacks, 0.386m to 0.540m for medium. does not affect monster targets, whose collision setups vary")),
                 ("spellcast_recoil_queue", new Property<bool>(false, "if true, players can queue the next spell to cast during recoil animation")),
                 ("spell_projectile_ethereal", new Property<bool>(false, "broadcasts all spell projectiles as ethereal to clients only, and manually send stop velocity on collision. can fix various issues with client missing target id.")),
                 ("suicide_instant_death", new Property<bool>(false, "if enabled, @die command kills player instantly. defaults to disabled, as in retail")),
@@ -701,7 +707,9 @@ namespace ACE.Server.Managers
                 ("tinker_lotto_enabled", new Property<bool>(false, "enables the tinkering lotto feature")),
                 ("rolling_level_cap_enabled", new Property<bool>(false, "Enables the server-wide rolling level cap. When enabled, players cannot exceed the XP threshold for the current cap level. The cap starts at 15 and increases daily based on rolling_level_cap_start_timestamp.")),
                 ("rolling_xp_modifier_enabled", new Property<bool>(false, "When true, RollingLevelCapManager automatically adjusts xp_modifier each day using a quadratic curve tied to season progression. Starts at 0.25 on day 0, reaches 1.0 at ~36% through the season (day ~44, level cap ~101), and climbs to rolling_xp_modifier_max at 80% (day 96). Requires rolling_level_cap_enabled.")),
+                ("catchup_xp_enabled", new Property<bool>(true, "Enables the catch-up XP boost. Characters whose lifetime total XP is below catchup_xp_threshold of the current season XP cap earn boosted XP, scaled by how far behind the cap they are. Requires an active rolling level cap.")),
                 ("hot_dungeon_enabled", new Property<bool>(false, "Enables the Hot Dungeons system on Infiltration servers. When enabled, up to 3 dungeons are periodically selected to offer bonus XP and loot.")),
+                ("hot_dungeon_logout_timer", new Property<bool>(true, "When enabled, any player standing in an active Hot Dungeon is subject to a PK-style pending-logout timer (frozen in-game until hot_dungeon_logout_timer_seconds elapses). Recalls are not affected.")),
                 ("dungeon_boss_enabled", new Property<bool>(false, "Enables random Dungeon Bosses. When enabled, normal monster spawns in an active Hot Dungeon or the Abandoned Mine have a small chance to be replaced by a scaled boss. Requires the Infiltration ruleset.")),
                 ("turnto_use_heading_stealth", new Property<bool>(false, "If true, TurnTo motions between two PK players use an absolute heading instead of a target ID, to prevent War Detect style plugins from revealing the target.")),
 
@@ -727,6 +735,7 @@ namespace ACE.Server.Managers
                 ("mansion_min_rank", new Property<long>(6, "overrides the default allegiance rank required to own a mansion")),
                 ("max_chars_per_account", new Property<long>(11, "retail defaults to 11, client supports up to 20")),
                 ("pk_timer", new Property<long>(20, "the number of seconds where a player cannot perform certain actions (ie. teleporting) after becoming involved in a PK battle")),
+                ("hot_dungeon_logout_timer_seconds", new Property<long>(20, "the number of seconds a player is held in a frozen pending-logout state when logging out while inside an active Hot Dungeon (see hot_dungeon_logout_timer)")),
                 ("player_save_interval", new Property<long>(300, "the number of seconds between automatic player saves")),
                 ("rares_max_days_between", new Property<long>(45, "for rares_real_time_v2: the maximum number of days a player can go before a rare is generated on rare eligible creature kills")),
                 ("rares_max_seconds_between", new Property<long>(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare")),
@@ -785,8 +794,10 @@ namespace ACE.Server.Managers
                 // Allegiance Hometown
                 ("ah_phase1_seconds",                     new Property<long>(240,        "Seconds an attacking allegiance must hold the bind stone (2+ attackers within 5m, no enemy interruption) to complete Phase 1 and start Phase 2.")),
 
-                // Allegiance swearing
-                ("allegiance_free_same_chain_reswears",   new Property<long>(3,          "Number of times a character may break and re-swear back into the SAME allegiance without starting the swear cooldown (for re-arranging chain order). Once exhausted, the cooldown applies. Resets when the character genuinely changes allegiance."))
+                // Allegiance swearing — PK-trophy cost
+                ("allegiance_free_swears",                new Property<long>(3,          "Number of times a character may swear allegiance for free before PK-trophy costs apply.")),
+                ("allegiance_swear_base_cost",            new Property<long>(100,        "PK-trophy cost of the first paid allegiance swear (the one after allegiance_free_swears).")),
+                ("allegiance_swear_max_cost",             new Property<long>(10000,      "Maximum PK-trophy cost of an allegiance swear. The cost ramps from the base to this cap over 12 paid swears (with 3 free, the cap is reached at the 15th swear)."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
@@ -822,7 +833,11 @@ namespace ACE.Server.Managers
                 ("ignore_magic_resist_pvp_scalar", new Property<double>(1.0, "Scales the effectiveness of IgnoreMagicResist (ie. hollow weapons) in pvp battles. 1.0 = full effectiveness / ignore all resistances from life enchantments (default), 0.5 = half effectiveness / use half resistances from life enchantments, 0.0 = no effectiveness / use full resistances from life enchantments")),
                 ("luminance_modifier", new Property<double>(1.0, "Scales the amount of luminance received by players")),
                 ("melee_max_angle", new Property<double>(0.0, "for melee players, the maximum angle before a TurnTo is required. retail appeared to have required a TurnTo even for the smallest of angle offsets.")),
+                ("missile_aim_center_mass_high", new Property<double>(0.75, "MISSILE FIX 4 tuning: fraction of target Height aimed at for AttackHeight.High when missile_aim_center_mass is enabled. 0.75 = upper collision sphere center. only used when missile_aim_center_mass is true")),
+                ("missile_aim_center_mass_medium", new Property<double>(0.62, "MISSILE FIX 4 tuning: fraction of target Height aimed at for AttackHeight.Medium when missile_aim_center_mass is enabled. only used when missile_aim_center_mass is true")),
+                ("missile_aim_center_mass_low", new Property<double>(0.27, "MISSILE FIX 4 tuning: fraction of target Height aimed at for AttackHeight.Low when missile_aim_center_mass is enabled. 0.27 = lower collision sphere center. only used when missile_aim_center_mass is true")),
                 ("mob_awareness_range", new Property<double>(1.0, "Scales the distance the monsters become alerted and aggro the players")),
+                ("player_update_position_threshold", new Property<double>(1.0, "MISSILE FIX 5: seconds between forced position broadcasts for a moving player. between broadcasts, other clients dead-reckon them from MoveToState, so the server position a missile is aimed at can diverge from what the shooter sees. retail-estimated default is 1.0; lower (0.2-0.33) for tighter pvp sync at the cost of bandwidth")),
                 ("pk_new_character_grace_period", new Property<double>(300, "the number of seconds, in addition to pk_respite_timer, that a player killer is set to non-player killer status after first exiting training academy")),
                 ("pk_respite_timer", new Property<double>(300, "the number of seconds that a player killer is set to non-player killer status after dying to another player killer")),
                 ("positive_spell_duration_modifier", new Property<double>(1.0, "Multiplier applied to the duration of beneficial spells when cast. 1.0 = no change, 1.5 = 50% longer. Result is rounded up to the nearest second. Does not affect DoTs, weapon spells, or item enchantments.")),
@@ -845,6 +860,7 @@ namespace ACE.Server.Managers
                 ("dungeon_boss_health_exponent", new Property<double>(1.4, "Exponent for Dungeon Boss health scaling vs the level cap: health = base * (cap / referenceLevel) ^ exponent. Higher = spongier bosses at high level. Default 1.4.")),
                 ("dungeon_boss_damage_mult", new Property<double>(1.0, "Additional multiplier applied to Dungeon Boss melee (body-part) damage after level-cap scaling. Default 1.0.")),
                 ("dungeon_boss_defense_mult", new Property<double>(1.0, "Multiplier on Dungeon Boss defensive skills (melee/missile/magic defense = how often it evades attacks and resists spells). Lower this if bosses resist/evade too often against near-maxed characters; raise it to make them harder to land on. Default 1.0.")),
+                ("dungeon_boss_armor_mult", new Property<double>(1.0, "Multiplier on Dungeon Boss natural armor, which mitigates MELEE and MISSILE damage only (spell damage ignores armor entirely). Lower this if melee/missile hit bosses for too little; raise it to make bosses tankier against weapons without touching their health, damage or magic resistance. Default 1.0.")),
                 ("xp_modifier", new Property<double>(1.0, "Globally scales the amount of xp received by players, note that this multiplies the other xp_modifier options.")),
                 ("xp_modifier_kill_tier1", new Property<double>(1.0, "Scales the amount of xp received by players for killing tier 1 creatures or unspecified tier creatures below level 28.")),
                 ("xp_modifier_kill_tier2", new Property<double>(1.0, "Scales the amount of xp received by players for killing tier 2 creatures or unspecified tier creatures between level 28 and level 65.")),
@@ -882,9 +898,9 @@ namespace ACE.Server.Managers
                 ("recent_teleport_threshold", new Property<double>(3.0, "seconds after materializing before a player can teleport again")),
                 ("arena_corpse_rot_seconds", new Property<double>(900, "the number of seconds a corpse generated in an arena landblock takes to rot")),
                 ("arena_pk_respite_timer", new Property<double>(120, "the number of seconds a player killer is set to NPK status after dying in an arena match")),
-                ("arena_1v1_global_dmg_mod", new Property<double>(1.0, "a damage modifier applied across all melee, missile and war/void projectile damage during arena 1v1 events")),
                 ("arena_1v1_healkit_skill_bonus_cap", new Property<double>(150, "the maximum effective skill bonus applied from a healing kit during arena 1v1 events.")),
                 ("arena_1v1_healkit_restoration_bonus_cap", new Property<double>(1.5, "the maximum effective restoration bonus applied from a healing kit during arena 1v1 events.")),
+                ("arena_1v1_drain_health_mod", new Property<double>(1.0, "a modifier applied to the effectiveness of drain health spells during arena 1v1 events. 0.5 means drain health spells drain and transfer 50% as much health as they normally would.")),
 
                 // Doctide flat PvP damage modifiers (additive with ClassicPvP's level-interpolated system; all default 1.0)
                 // War magic
@@ -895,6 +911,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_war_cb_crit", new Property<double>(1.0, "Scales the amount of CB crit damage for war magic")),
                 ("pvp_dmg_mod_war_cs_crit", new Property<double>(1.0, "Scales the amount of CS crit damage for war magic")),
                 ("pvp_dmg_mod_war_cs_dmg", new Property<double>(1.0, "Scales the amount of CS damage for war magic for all hits (both crits and non-crits)")),
+                ("pvp_dmg_mod_war_weeping", new Property<double>(1.0, "Scales war magic damage from Weeping (Human Slayer) casters in PvP")),
 
                 // Void magic
                 ("pvp_dmg_mod_void", new Property<double>(1.0, "Scales the amount of damage players take from Void Magic (not including streaks and DOTs which have their own mods)")),
@@ -904,6 +921,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_void_cb_crit", new Property<double>(1.0, "Scales the amount of CB crit damage for void magic")),
                 ("pvp_dmg_mod_void_variance", new Property<double>(1.0, "Scales the low end for void magic bolts and arcs without affecting top end. Values under 1 reduce variance/increase min dmg; values over 1 increase variance/reduce min dmg.")),
                 ("pvp_dmg_mod_void_dot_rating_reduction", new Property<double>(1.0, "Scales the base DOT damage used when computing the NetherDotDamageRating for a PvP void dot")),
+                ("pvp_dmg_mod_void_weeping", new Property<double>(1.0, "Scales void magic damage from Weeping (Human Slayer) casters in PvP")),
 
                 // Global PvP effect mods
                 ("pvp_dmg_mod_phantom", new Property<double>(1.0, "Scales the amount of damage for phantom weapons in PvP")),
@@ -920,6 +938,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_fw_ar", new Property<double>(1.0, "Scales the amount of damage for FW AR")),
                 ("pvp_dmg_mod_fw_hollow", new Property<double>(1.0, "Scales the amount of damage for FW Hollow")),
                 ("pvp_dmg_mod_fw_phantom", new Property<double>(1.0, "Scales the amount of damage for FW Phantom")),
+                ("pvp_dmg_mod_fw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) FW in PvP")),
 
                 // Light Weapons
                 ("pvp_dmg_mod_lw", new Property<double>(1.0, "Scales the amount of damage for Light Weapons in PvP")),
@@ -929,6 +948,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_lw_ar", new Property<double>(1.0, "Scales the amount of damage for LW AR")),
                 ("pvp_dmg_mod_lw_hollow", new Property<double>(1.0, "Scales the amount of damage for LW Hollow")),
                 ("pvp_dmg_mod_lw_phantom", new Property<double>(1.0, "Scales the amount of damage for LW Phantom")),
+                ("pvp_dmg_mod_lw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) LW in PvP")),
                 ("pvp_dmg_mod_lw_triplestrike", new Property<double>(1.0, "Scales the amount of damage for LW Triple Strike weapons")),
                 ("pvp_dmg_mod_lw_cb_crit_triplestrike", new Property<double>(1.0, "Scales the amount of CB crit damage for LW Triple Strike weapons")),
 
@@ -940,6 +960,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_hw_ar", new Property<double>(1.0, "Scales the amount of damage for HW AR")),
                 ("pvp_dmg_mod_hw_hollow", new Property<double>(1.0, "Scales the amount of damage for HW Hollow")),
                 ("pvp_dmg_mod_hw_phantom", new Property<double>(1.0, "Scales the amount of damage for HW Phantom")),
+                ("pvp_dmg_mod_hw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) HW in PvP")),
                 ("pvp_dmg_mod_hw_multistrike", new Property<double>(1.0, "Scales the amount of damage for HW Multi Strike weapons")),
                 ("pvp_dmg_mod_hw_cb_crit_multistrike", new Property<double>(1.0, "Scales the amount of CB crit damage for HW Multi Strike weapons")),
 
@@ -951,6 +972,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_2h_ar", new Property<double>(1.0, "Scales the amount of damage for 2H AR")),
                 ("pvp_dmg_mod_2h_hollow", new Property<double>(1.0, "Scales the amount of damage for 2H Hollow")),
                 ("pvp_dmg_mod_2h_phantom", new Property<double>(1.0, "Scales the amount of damage for 2H Phantom")),
+                ("pvp_dmg_mod_2h_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) 2H in PvP")),
 
                 // Crossbow
                 ("pvp_dmg_mod_xbow", new Property<double>(1.0, "Scales the amount of damage for Crossbow in PvP")),
@@ -960,6 +982,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_xbow_ar", new Property<double>(1.0, "Scales the amount of damage for Xbow AR")),
                 ("pvp_dmg_mod_xbow_hollow", new Property<double>(1.0, "Scales the amount of damage for Xbow Hollow")),
                 ("pvp_dmg_mod_xbow_phantom", new Property<double>(1.0, "Scales the amount of damage for Xbow Phantom")),
+                ("pvp_dmg_mod_xbow_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Xbow in PvP")),
 
                 // Bow
                 ("pvp_dmg_mod_bow", new Property<double>(1.0, "Scales the amount of damage for Bow in PvP")),
@@ -969,6 +992,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_bow_ar", new Property<double>(1.0, "Scales the amount of damage for Bow AR")),
                 ("pvp_dmg_mod_bow_hollow", new Property<double>(1.0, "Scales the amount of damage for Bow Hollow")),
                 ("pvp_dmg_mod_bow_phantom", new Property<double>(1.0, "Scales the amount of damage for Bow Phantom")),
+                ("pvp_dmg_mod_bow_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Bow in PvP")),
 
                 // Thrown Weapons
                 ("pvp_dmg_mod_tw", new Property<double>(1.0, "Scales the amount of damage for Thrown Weapons in PvP")),
@@ -978,6 +1002,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_tw_ar", new Property<double>(1.0, "Scales the amount of damage for TW AR")),
                 ("pvp_dmg_mod_tw_hollow", new Property<double>(1.0, "Scales the amount of damage for TW Hollow")),
                 ("pvp_dmg_mod_tw_phantom", new Property<double>(1.0, "Scales the amount of damage for TW Phantom")),
+                ("pvp_dmg_mod_tw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) TW in PvP")),
 
                 // ── Infiltration-era individual weapon skill mods ──────────────────────────
                 // These use the pre-ToD skill names that are the actual WeaponSkill values on
@@ -992,6 +1017,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_sword_ar", new Property<double>(1.0, "Scales the amount of damage for Sword AR")),
                 ("pvp_dmg_mod_sword_hollow", new Property<double>(1.0, "Scales the amount of damage for Sword Hollow")),
                 ("pvp_dmg_mod_sword_phantom", new Property<double>(1.0, "Scales the amount of damage for Sword Phantom")),
+                ("pvp_dmg_mod_sword_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Sword in PvP")),
 
                 // Mace (Skill.Mace)
                 ("pvp_dmg_mod_mace", new Property<double>(1.0, "Scales the amount of damage for Mace in PvP")),
@@ -1001,6 +1027,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_mace_ar", new Property<double>(1.0, "Scales the amount of damage for Mace AR")),
                 ("pvp_dmg_mod_mace_hollow", new Property<double>(1.0, "Scales the amount of damage for Mace Hollow")),
                 ("pvp_dmg_mod_mace_phantom", new Property<double>(1.0, "Scales the amount of damage for Mace Phantom")),
+                ("pvp_dmg_mod_mace_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Mace in PvP")),
 
                 // Axe (Skill.Axe)
                 ("pvp_dmg_mod_axe", new Property<double>(1.0, "Scales the amount of damage for Axe in PvP")),
@@ -1010,6 +1037,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_axe_ar", new Property<double>(1.0, "Scales the amount of damage for Axe AR")),
                 ("pvp_dmg_mod_axe_hollow", new Property<double>(1.0, "Scales the amount of damage for Axe Hollow")),
                 ("pvp_dmg_mod_axe_phantom", new Property<double>(1.0, "Scales the amount of damage for Axe Phantom")),
+                ("pvp_dmg_mod_axe_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Axe in PvP")),
 
                 // Spear (Skill.Spear)
                 ("pvp_dmg_mod_spear", new Property<double>(1.0, "Scales the amount of damage for Spear in PvP")),
@@ -1019,6 +1047,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_spear_ar", new Property<double>(1.0, "Scales the amount of damage for Spear AR")),
                 ("pvp_dmg_mod_spear_hollow", new Property<double>(1.0, "Scales the amount of damage for Spear Hollow")),
                 ("pvp_dmg_mod_spear_phantom", new Property<double>(1.0, "Scales the amount of damage for Spear Phantom")),
+                ("pvp_dmg_mod_spear_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Spear in PvP")),
 
                 // Staff (Skill.Staff)
                 ("pvp_dmg_mod_staff", new Property<double>(1.0, "Scales the amount of damage for Staff in PvP")),
@@ -1028,6 +1057,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_staff_ar", new Property<double>(1.0, "Scales the amount of damage for Staff AR")),
                 ("pvp_dmg_mod_staff_hollow", new Property<double>(1.0, "Scales the amount of damage for Staff Hollow")),
                 ("pvp_dmg_mod_staff_phantom", new Property<double>(1.0, "Scales the amount of damage for Staff Phantom")),
+                ("pvp_dmg_mod_staff_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Staff in PvP")),
 
                 // Dagger (Skill.Dagger)
                 ("pvp_dmg_mod_dagger", new Property<double>(1.0, "Scales the amount of damage for Dagger in PvP")),
@@ -1037,6 +1067,7 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_dagger_ar", new Property<double>(1.0, "Scales the amount of damage for Dagger AR")),
                 ("pvp_dmg_mod_dagger_hollow", new Property<double>(1.0, "Scales the amount of damage for Dagger Hollow")),
                 ("pvp_dmg_mod_dagger_phantom", new Property<double>(1.0, "Scales the amount of damage for Dagger Phantom")),
+                ("pvp_dmg_mod_dagger_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Dagger in PvP")),
 
                 // Unarmed Combat (Skill.UnarmedCombat)
                 ("pvp_dmg_mod_unarmed", new Property<double>(1.0, "Scales the amount of damage for Unarmed Combat in PvP")),
@@ -1046,38 +1077,206 @@ namespace ACE.Server.Managers
                 ("pvp_dmg_mod_unarmed_ar", new Property<double>(1.0, "Scales the amount of damage for Unarmed AR")),
                 ("pvp_dmg_mod_unarmed_hollow", new Property<double>(1.0, "Scales the amount of damage for Unarmed Hollow")),
                 ("pvp_dmg_mod_unarmed_phantom", new Property<double>(1.0, "Scales the amount of damage for Unarmed Phantom")),
-
-                // Weeping (Human Slayer quest weapons) — per weapon type; applied on top of the
-                // per-skill/effect mods above whenever the attacker's weapon has Human Slayer.
-                // War/Void cover weeping casters; the rest cover melee & missile weeping weapons.
-                ("pvp_dmg_mod_war_weeping", new Property<double>(1.0, "Scales war magic damage from Weeping (Human Slayer) casters in PvP")),
-                ("pvp_dmg_mod_void_weeping", new Property<double>(1.0, "Scales void magic damage from Weeping (Human Slayer) casters in PvP")),
-                ("pvp_dmg_mod_fw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) FW in PvP")),
-                ("pvp_dmg_mod_lw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) LW in PvP")),
-                ("pvp_dmg_mod_hw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) HW in PvP")),
-                ("pvp_dmg_mod_2h_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) 2H in PvP")),
-                ("pvp_dmg_mod_bow_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Bow in PvP")),
-                ("pvp_dmg_mod_xbow_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Xbow in PvP")),
-                ("pvp_dmg_mod_tw_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) TW in PvP")),
-                ("pvp_dmg_mod_sword_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Sword in PvP")),
-                ("pvp_dmg_mod_mace_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Mace in PvP")),
-                ("pvp_dmg_mod_axe_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Axe in PvP")),
-                ("pvp_dmg_mod_spear_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Spear in PvP")),
-                ("pvp_dmg_mod_staff_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Staff in PvP")),
-                ("pvp_dmg_mod_dagger_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Dagger in PvP")),
                 ("pvp_dmg_mod_unarmed_weeping", new Property<double>(1.0, "Scales the amount of damage for Weeping (Human Slayer) Unarmed in PvP")),
 
                 // Misc PvP modifiers
-                ("pvp_cs_critrate_mod", new Property<double>(1.0, "Scales the crit rate for Critical Strike in PvP")),
                 ("pvp_void_hybrid_mod", new Property<double>(1.0, "Scales the amount of void DOT damage when the attacker is a hybrid void (has trained/specialized melee or war magic skills)")),
                 ("pvp_ratings_mod_dmg", new Property<double>(1.0, "Scales the bonus received from damage and damage-resistance ratings during PvP")),
                 ("pvp_ratings_mod_critdmg", new Property<double>(1.0, "Scales the bonus received from crit-damage and crit-damage-resistance ratings during PvP")),
+
+                // ── Arena-only PvP damage modifiers ───────────────────────────
+                // Mirror of the pvp_dmg_mod_* set above. When the defender is standing in an arena
+                // landblock these REPLACE their global counterparts — the two sets never stack.
+                // The check is landblock-only (no arena event or event membership is considered) so
+                // that it stays cheap enough to run on every damage calculation.
+                // Resolved by PvpDmgMod.Get(key, isArena).
+
+                // War magic
+                ("pvp_dmg_mod_arena_war", new Property<double>(1.0, "Arena only: Scales the amount of damage for war magic")),
+                ("pvp_dmg_mod_arena_war_variance", new Property<double>(1.0, "Arena only: Scales the low end for war magic bolts and arcs without affecting top end. Values under 1 reduce variance/increase min dmg; values over 1 increase variance/reduce min dmg.")),
+                ("pvp_dmg_mod_arena_war_streak", new Property<double>(1.0, "Arena only: Scales the amount of damage for war streaks")),
+                ("pvp_dmg_mod_arena_war_blast", new Property<double>(1.0, "Arena only: Scales the amount of damage for war blasts")),
+                ("pvp_dmg_mod_arena_war_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of CB crit damage for war magic")),
+                ("pvp_dmg_mod_arena_war_cs_crit", new Property<double>(1.0, "Arena only: Scales the amount of CS crit damage for war magic")),
+                ("pvp_dmg_mod_arena_war_cs_dmg", new Property<double>(1.0, "Arena only: Scales the amount of CS damage for war magic for all hits (both crits and non-crits)")),
+                ("pvp_dmg_mod_arena_war_weeping", new Property<double>(1.0, "Arena only: Scales war magic damage from Weeping (Human Slayer) casters in PvP")),
+
+                // Void magic
+                ("pvp_dmg_mod_arena_void", new Property<double>(1.0, "Arena only: Scales the amount of damage players take from Void Magic (not including streaks and DOTs which have their own mods)")),
+                ("pvp_dmg_mod_arena_void_streak", new Property<double>(1.0, "Arena only: Scales the amount of damage for void streaks")),
+                ("pvp_dmg_mod_arena_void_dot", new Property<double>(1.0, "Arena only: Scales the amount of damage for void DOTs")),
+                ("pvp_dmg_mod_arena_void_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for void magic")),
+                ("pvp_dmg_mod_arena_void_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of CB crit damage for void magic")),
+                ("pvp_dmg_mod_arena_void_variance", new Property<double>(1.0, "Arena only: Scales the low end for void magic bolts and arcs without affecting top end. Values under 1 reduce variance/increase min dmg; values over 1 increase variance/reduce min dmg.")),
+                ("pvp_dmg_mod_arena_void_dot_rating_reduction", new Property<double>(1.0, "Arena only: Scales the base DOT damage used when computing the NetherDotDamageRating for a PvP void dot")),
+                ("pvp_dmg_mod_arena_void_weeping", new Property<double>(1.0, "Arena only: Scales void magic damage from Weeping (Human Slayer) casters in PvP")),
+
+                // Global PvP effect mods
+                ("pvp_dmg_mod_arena_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for phantom weapons in PvP")),
+                ("pvp_dmg_mod_arena_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for hollow weapons in PvP")),
+                ("pvp_dmg_mod_arena_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for crippling blow in PvP")),
+                ("pvp_dmg_mod_arena_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for armor rending in PvP")),
+                ("pvp_dmg_mod_arena_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for critical strike in PvP")),
+
+                // Finesse Weapons
+                ("pvp_dmg_mod_arena_fw", new Property<double>(1.0, "Arena only: Scales the amount of damage for Finesse Weapons in PvP")),
+                ("pvp_dmg_mod_arena_fw_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for FW CB")),
+                ("pvp_dmg_mod_arena_fw_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for FW CB")),
+                ("pvp_dmg_mod_arena_fw_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for FW CS")),
+                ("pvp_dmg_mod_arena_fw_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for FW AR")),
+                ("pvp_dmg_mod_arena_fw_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for FW Hollow")),
+                ("pvp_dmg_mod_arena_fw_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for FW Phantom")),
+                ("pvp_dmg_mod_arena_fw_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) FW in PvP")),
+
+                // Light Weapons
+                ("pvp_dmg_mod_arena_lw", new Property<double>(1.0, "Arena only: Scales the amount of damage for Light Weapons in PvP")),
+                ("pvp_dmg_mod_arena_lw_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW CB")),
+                ("pvp_dmg_mod_arena_lw_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for LW CB")),
+                ("pvp_dmg_mod_arena_lw_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW CS")),
+                ("pvp_dmg_mod_arena_lw_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW AR")),
+                ("pvp_dmg_mod_arena_lw_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW Hollow")),
+                ("pvp_dmg_mod_arena_lw_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW Phantom")),
+                ("pvp_dmg_mod_arena_lw_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) LW in PvP")),
+                ("pvp_dmg_mod_arena_lw_triplestrike", new Property<double>(1.0, "Arena only: Scales the amount of damage for LW Triple Strike weapons")),
+                ("pvp_dmg_mod_arena_lw_cb_crit_triplestrike", new Property<double>(1.0, "Arena only: Scales the amount of CB crit damage for LW Triple Strike weapons")),
+
+                // Heavy Weapons
+                ("pvp_dmg_mod_arena_hw", new Property<double>(1.0, "Arena only: Scales the amount of damage for Heavy Weapons in PvP")),
+                ("pvp_dmg_mod_arena_hw_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW CB")),
+                ("pvp_dmg_mod_arena_hw_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for HW CB")),
+                ("pvp_dmg_mod_arena_hw_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW CS")),
+                ("pvp_dmg_mod_arena_hw_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW AR")),
+                ("pvp_dmg_mod_arena_hw_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW Hollow")),
+                ("pvp_dmg_mod_arena_hw_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW Phantom")),
+                ("pvp_dmg_mod_arena_hw_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) HW in PvP")),
+                ("pvp_dmg_mod_arena_hw_multistrike", new Property<double>(1.0, "Arena only: Scales the amount of damage for HW Multi Strike weapons")),
+                ("pvp_dmg_mod_arena_hw_cb_crit_multistrike", new Property<double>(1.0, "Arena only: Scales the amount of CB crit damage for HW Multi Strike weapons")),
+
+                // Two Handed Combat
+                ("pvp_dmg_mod_arena_2h", new Property<double>(1.0, "Arena only: Scales the amount of damage for Two Handed Weapons in PvP")),
+                ("pvp_dmg_mod_arena_2h_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for 2H CB")),
+                ("pvp_dmg_mod_arena_2h_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for 2H CB")),
+                ("pvp_dmg_mod_arena_2h_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for 2H CS")),
+                ("pvp_dmg_mod_arena_2h_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for 2H AR")),
+                ("pvp_dmg_mod_arena_2h_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for 2H Hollow")),
+                ("pvp_dmg_mod_arena_2h_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for 2H Phantom")),
+                ("pvp_dmg_mod_arena_2h_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) 2H in PvP")),
+
+                // Crossbow
+                ("pvp_dmg_mod_arena_xbow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Crossbow in PvP")),
+                ("pvp_dmg_mod_arena_xbow_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Xbow CB")),
+                ("pvp_dmg_mod_arena_xbow_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Xbow CB")),
+                ("pvp_dmg_mod_arena_xbow_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Xbow CS")),
+                ("pvp_dmg_mod_arena_xbow_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Xbow AR")),
+                ("pvp_dmg_mod_arena_xbow_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Xbow Hollow")),
+                ("pvp_dmg_mod_arena_xbow_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Xbow Phantom")),
+                ("pvp_dmg_mod_arena_xbow_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Xbow in PvP")),
+
+                // Bow
+                ("pvp_dmg_mod_arena_bow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow in PvP")),
+                ("pvp_dmg_mod_arena_bow_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow CB")),
+                ("pvp_dmg_mod_arena_bow_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Bow CB")),
+                ("pvp_dmg_mod_arena_bow_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow CS")),
+                ("pvp_dmg_mod_arena_bow_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow AR")),
+                ("pvp_dmg_mod_arena_bow_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow Hollow")),
+                ("pvp_dmg_mod_arena_bow_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Bow Phantom")),
+                ("pvp_dmg_mod_arena_bow_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Bow in PvP")),
+
+                // Thrown Weapons
+                ("pvp_dmg_mod_arena_tw", new Property<double>(1.0, "Arena only: Scales the amount of damage for Thrown Weapons in PvP")),
+                ("pvp_dmg_mod_arena_tw_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for TW CB")),
+                ("pvp_dmg_mod_arena_tw_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for TW CB")),
+                ("pvp_dmg_mod_arena_tw_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for TW CS")),
+                ("pvp_dmg_mod_arena_tw_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for TW AR")),
+                ("pvp_dmg_mod_arena_tw_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for TW Hollow")),
+                ("pvp_dmg_mod_arena_tw_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for TW Phantom")),
+                ("pvp_dmg_mod_arena_tw_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) TW in PvP")),
+
+                // ── Infiltration-era individual weapon skill mods ──────────────────────────
+                // These use the pre-ToD skill names that are the actual WeaponSkill values on
+                // Infiltration-ruleset weapons. The EoR-era entries above (fw/lw/hw/2h/…) are
+                // kept for forward compatibility but will not trigger on a Feb 2005 server.
+
+                // Sword (Skill.Sword)
+                ("pvp_dmg_mod_arena_sword", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword in PvP")),
+                ("pvp_dmg_mod_arena_sword_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword CB")),
+                ("pvp_dmg_mod_arena_sword_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Sword CB")),
+                ("pvp_dmg_mod_arena_sword_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword CS")),
+                ("pvp_dmg_mod_arena_sword_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword AR")),
+                ("pvp_dmg_mod_arena_sword_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword Hollow")),
+                ("pvp_dmg_mod_arena_sword_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Sword Phantom")),
+                ("pvp_dmg_mod_arena_sword_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Sword in PvP")),
+
+                // Mace (Skill.Mace)
+                ("pvp_dmg_mod_arena_mace", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace in PvP")),
+                ("pvp_dmg_mod_arena_mace_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace CB")),
+                ("pvp_dmg_mod_arena_mace_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Mace CB")),
+                ("pvp_dmg_mod_arena_mace_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace CS")),
+                ("pvp_dmg_mod_arena_mace_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace AR")),
+                ("pvp_dmg_mod_arena_mace_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace Hollow")),
+                ("pvp_dmg_mod_arena_mace_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Mace Phantom")),
+                ("pvp_dmg_mod_arena_mace_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Mace in PvP")),
+
+                // Axe (Skill.Axe)
+                ("pvp_dmg_mod_arena_axe", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe in PvP")),
+                ("pvp_dmg_mod_arena_axe_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe CB")),
+                ("pvp_dmg_mod_arena_axe_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Axe CB")),
+                ("pvp_dmg_mod_arena_axe_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe CS")),
+                ("pvp_dmg_mod_arena_axe_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe AR")),
+                ("pvp_dmg_mod_arena_axe_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe Hollow")),
+                ("pvp_dmg_mod_arena_axe_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Axe Phantom")),
+                ("pvp_dmg_mod_arena_axe_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Axe in PvP")),
+
+                // Spear (Skill.Spear)
+                ("pvp_dmg_mod_arena_spear", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear in PvP")),
+                ("pvp_dmg_mod_arena_spear_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear CB")),
+                ("pvp_dmg_mod_arena_spear_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Spear CB")),
+                ("pvp_dmg_mod_arena_spear_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear CS")),
+                ("pvp_dmg_mod_arena_spear_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear AR")),
+                ("pvp_dmg_mod_arena_spear_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear Hollow")),
+                ("pvp_dmg_mod_arena_spear_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Spear Phantom")),
+                ("pvp_dmg_mod_arena_spear_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Spear in PvP")),
+
+                // Staff (Skill.Staff)
+                ("pvp_dmg_mod_arena_staff", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff in PvP")),
+                ("pvp_dmg_mod_arena_staff_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff CB")),
+                ("pvp_dmg_mod_arena_staff_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Staff CB")),
+                ("pvp_dmg_mod_arena_staff_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff CS")),
+                ("pvp_dmg_mod_arena_staff_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff AR")),
+                ("pvp_dmg_mod_arena_staff_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff Hollow")),
+                ("pvp_dmg_mod_arena_staff_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Staff Phantom")),
+                ("pvp_dmg_mod_arena_staff_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Staff in PvP")),
+
+                // Dagger (Skill.Dagger)
+                ("pvp_dmg_mod_arena_dagger", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger in PvP")),
+                ("pvp_dmg_mod_arena_dagger_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger CB")),
+                ("pvp_dmg_mod_arena_dagger_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Dagger CB")),
+                ("pvp_dmg_mod_arena_dagger_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger CS")),
+                ("pvp_dmg_mod_arena_dagger_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger AR")),
+                ("pvp_dmg_mod_arena_dagger_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger Hollow")),
+                ("pvp_dmg_mod_arena_dagger_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Dagger Phantom")),
+                ("pvp_dmg_mod_arena_dagger_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Dagger in PvP")),
+
+                // Unarmed Combat (Skill.UnarmedCombat)
+                ("pvp_dmg_mod_arena_unarmed", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed Combat in PvP")),
+                ("pvp_dmg_mod_arena_unarmed_cb", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed CB")),
+                ("pvp_dmg_mod_arena_unarmed_cb_crit", new Property<double>(1.0, "Arena only: Scales the amount of crit damage for Unarmed CB")),
+                ("pvp_dmg_mod_arena_unarmed_cs", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed CS")),
+                ("pvp_dmg_mod_arena_unarmed_ar", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed AR")),
+                ("pvp_dmg_mod_arena_unarmed_hollow", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed Hollow")),
+                ("pvp_dmg_mod_arena_unarmed_phantom", new Property<double>(1.0, "Arena only: Scales the amount of damage for Unarmed Phantom")),
+                ("pvp_dmg_mod_arena_unarmed_weeping", new Property<double>(1.0, "Arena only: Scales the amount of damage for Weeping (Human Slayer) Unarmed in PvP")),
 
                 // Rolling Level Cap — per-category XP ratios
                 ("daily_xp_category_ratio", new Property<double>(0.70, "[Deprecated] Superseded by daily_quest_xp_category_ratio and daily_monster_xp_category_ratio. Kept so existing DB rows do not error.")),
                 ("daily_quest_xp_category_ratio",   new Property<double>(0.60, "Rolling cap: maximum fraction of a player's remaining cap XP that the Quest category (quests, emotes, exploration) can absorb in one cap period.")),
                 ("daily_monster_xp_category_ratio",  new Property<double>(0.60, "Rolling cap: maximum fraction of a player's remaining cap XP that the Monster category (kills, fellowship, allegiance, proficiency) can absorb in one cap period.")),
                 ("daily_pvp_xp_category_ratio",      new Property<double>(1.00, "Rolling cap: maximum fraction of a player's remaining cap XP that the PvP category (player kills, arenas, PvP custom content) can absorb in one cap period.")),
+                // Catch-up XP boost — scales earned XP for characters behind the season cap
+                ("catchup_xp_threshold",             new Property<double>(0.70, "Catch-up XP: fraction of the current season XP cap below which a character earns boosted XP. A character whose total XP is at or above this fraction of the cap gets no boost. Default 0.70 (70%).")),
+                ("catchup_xp_max_multiplier",        new Property<double>(5.00, "Catch-up XP: multiplier applied to earned XP for a character with 0 total XP (furthest behind the cap). Default 5.0 (500%).")),
+                ("catchup_xp_min_multiplier",        new Property<double>(2.00, "Catch-up XP: multiplier applied to earned XP for a character right at catchup_xp_threshold of the cap (least far behind). Default 2.0 (200%). The multiplier ramps linearly between this and catchup_xp_max_multiplier.")),
+
                 ("ancient_bottle_fill_ratio",        new Property<double>(0.25, "Fraction of overflow PvP XP (beyond the daily PvP or global cap) that is stored into Ancient Bottles. The remainder is lost to the cap. e.g. 0.25 means only 25% of post-cap PK XP is captured.")),
 
                 // PK kill XP rewards
@@ -1086,9 +1285,6 @@ namespace ACE.Server.Managers
                 ("pk_kill_window_hours",              new Property<double>(1.0,  "Hours of sliding window used to count kills against the same victim before diminishing returns kick in.")),
                 ("pk_kill_diminish_threshold",        new Property<double>(3.0,  "Number of kills against the same victim within the window before rewards are suppressed.")),
                 ("pk_kill_diminish_hours",            new Property<double>(3.0,  "Hours the diminishing-returns suppression lasts once the threshold is exceeded.")),
-
-                // Allegiance swear cooldown
-                ("allegiance_swear_cooldown_days",   new Property<double>(30.0, "Days a player must wait before swearing allegiance again after a voluntary oath change. First oath is always free.")),
 
                 // Bounty Hunter system
                 ("bounty_last_location_duration",    new Property<double>(30.0,  "Seconds a hunter must wait before using the location finder on the same contract again.")),
@@ -1102,7 +1298,11 @@ namespace ACE.Server.Managers
                 ("hot_dungeon_box_drop_multiplier",  new Property<double>(1.0,   "Global multiplier applied to every hot dungeon's per-kill Box drop chance (1.0 = tuned defaults, 0.25 = 75% fewer boxes).")),
 
                 // Hot Dungeon salvage bonus
-                ("hot_dungeon_salvage_multiplier",   new Property<double>(2.0,   "Multiplier applied to salvage material yield while the player is inside an active hot dungeon (1.0 = no bonus, 2.0 = double material)."))
+                ("hot_dungeon_salvage_multiplier",   new Property<double>(2.0,   "Multiplier applied to salvage material yield while the player is inside an active hot dungeon (1.0 = no bonus, 2.0 = double material).")),
+                ("hot_dungeon_weapon_quality_bias",   new Property<double>(0.02,  "Chance (0-1) for a weapon rolled in a hot dungeon to be upgraded to the best result available at the wield requirement it rolled into. Rolled independently for damage and for damage variance, so a weapon may get one, both, or neither. Melee and thrown weapons roll both; bows, crossbows, atlatls and casters have no variance mutation and roll damage only. Does not change which wield requirement the weapon rolls. 0 disables.")),
+                ("hot_dungeon_weapon_drop_bias",      new Property<double>(0.35,  "Chance (0-1) for a gem, art object or scroll rolled in a hot dungeon to be converted into a weapon instead. 0 disables.")),
+                ("hot_dungeon_single_slot_armor_bias",new Property<double>(0.50,  "Chance (0-1) for a multi-slot armor piece rolled in a hot dungeon (coat, cuirass, shirt, sleeves, leggings, boots) to be rerolled for a single-slot piece. 0 disables.")),
+                ("hot_dungeon_mundane_upgrade_chance",new Property<double>(0.60,  "Chance (0-1) for a mundane item rolled in a hot dungeon to be upgraded to a weapon or armor piece instead. The number of items dropped is unchanged. 0 disables."))
                 );
         
         public static readonly ReadOnlyDictionary<string, Property<string>> DefaultStringProperties =

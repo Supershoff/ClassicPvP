@@ -205,4 +205,8 @@ VALUES  (480480, 2,   6046, 0, 93, 1.1, False) /* Greater Shadow Amuli Coat (660
      , (480480, 4, 480639,   -1, 0, 0, False) /* Slayer Upgrade Gem for Shop */
      , (480480, 4, 490271,   -1, 0, 0, False) /* Empyrean Jeweler's Sawblade for Shop */
      , (480480, 4, 490304,   -1, 0, 0, False) /* Oil of Creature Slaying for Shop */
-     , (480480, 4, 1548803,  -1, 0, 0, False) /* Empyrean Tuning Fork (Random Cantrip) for Shop */;
+     , (480480, 4, 1548803,  -1, 0, 0, False) /* Empyrean Tuning Fork (Random Cantrip) for Shop */
+     , (480480, 4, 480642,   -1, 0, 0, False) /* Racial Requirement Morph Gem for Shop */
+     , (480480, 4, 480643,   -1, 0, 0, False) /* Allegiance Rank Requirement Morph Gem for Shop */
+     , (480480, 4, 490050,   -1, 0, 0, False) /* Lesser Impenetrability Morph Gem for Shop */
+     , (480480, 4,  27795,   -1, 0, 0, False) /* Fetish of the Dark Idols for Shop */;

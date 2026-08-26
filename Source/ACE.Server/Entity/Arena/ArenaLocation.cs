@@ -1395,6 +1395,12 @@ namespace ACE.Server.Entity
             ratLair.ArenaName = "Rat Lair";
             locList.Add(ratLair.LandblockId, ratLair);
 
+            var xarabydunLifestone = new ArenaLocation();
+            xarabydunLifestone.LandblockId = 0x02D3;
+            xarabydunLifestone.SupportedEventTypes = new List<string>() { "2v2", "ffa", "group", "tugak" };
+            xarabydunLifestone.ArenaName = "Xarabydun Lifestone";
+            locList.Add(xarabydunLifestone.LandblockId, xarabydunLifestone);
+
             //var pklArena = new ArenaLocation();
             //pklArena.LandblockId = 0x0067;
             //pklArena.SupportedEventTypes = new List<string>() { "ffa", "group", "tugak" };
@@ -1422,17 +1428,19 @@ namespace ACE.Server.Entity
             return locList;
         }
 
-        private static List<uint> _arenaLandblocks;
-        public static List<uint> ArenaLandblocks
+        // HashSet rather than List: IsArenaLandblock is called on every damage calculation
+        private static HashSet<uint> _arenaLandblocks;
+        public static HashSet<uint> ArenaLandblocks
         {
             get
             {
                 if (_arenaLandblocks == null)
                 {
-                    _arenaLandblocks = new List<uint>()
+                    _arenaLandblocks = new HashSet<uint>()
                     {
                         0x018B, //A Cave
                         0x01D9, //Rat Lair
+                        0x02D3, //Xarabydun Lifestone
                         //0x0067, // PKL Arena
                         //0x007F, // Binding Realm
                         //0x0145, // Bone Lair
@@ -1550,6 +1558,20 @@ namespace ACE.Server.Entity
                         new Position(0x01D9010A, 30.201702f, -16.127213f, 0.005000f, 0f, 0f, -0.999959f, -0.009022f), // 0x01D9010A [30.201702 -16.127213 0.005000] -0.009022 0.000000 0.000000 -0.999959
                         new Position(0x01D9010B, 29.965298f, -33.662392f, 0.005000f, 0f, 0f, 0.003121f, -0.999995f), // 0x01D9010B [29.965298 -33.662392 0.005000] -0.999995 0.000000 0.000000 0.003121
                     });//Rat Lair
+
+                    _arenaLocationStartingPositions.Add(0x02D3, new List<Position>()
+                    {
+                        new Position(0x02D30116, 44.519798f, -41.301655f, 0.005000f, 0f, 0f, -0.848320f, -0.529483f), // 0x02D30116 [44.519798 -41.301655 0.005000] -0.529483 0.000000 0.000000 -0.848320
+                        new Position(0x02D30117, 38.992039f, -52.372768f, 0.005000f, 0f, 0f, -0.513071f, -0.858346f), // 0x02D30117 [38.992039 -52.372768 0.005000] -0.858346 0.000000 0.000000 -0.513071
+                        new Position(0x02D30112, 27.737848f, -64.324081f, 0.005000f, 0f, 0f, -0.106830f, -0.994277f), // 0x02D30112 [27.737848 -64.324081 0.005000] -0.994277 0.000000 0.000000 -0.106830
+                        new Position(0x02D30106, 12.533463f, -55.252972f, 0.005000f, 0f, 0f, 0.408943f, -0.912560f), // 0x02D30106 [12.533463 -55.252972 0.005000] -0.912560 0.000000 0.000000 0.408943
+                        new Position(0x02D30104, 6.508535f, -45.134563f, 0.005000f, 0f, 0f, 0.697205f, -0.716872f), // 0x02D30104 [6.508535 -45.134563 0.005000] -0.716872 0.000000 0.000000 0.697205
+                        new Position(0x02D30103, 9.816286f, -35.866894f, 0.005000f, 0f, 0f, 0.835337f, -0.549738f), // 0x02D30103 [9.816286 -35.866894 0.005000] -0.549738 0.000000 0.000000 0.835337
+                        new Position(0x02D30109, 19.511150f, -26.370974f, 0.005000f, 0f, 0f, 0.983301f, -0.181984f), // 0x02D30109 [19.511150 -26.370974 0.005000] -0.181984 0.000000 0.000000 0.983301
+                        new Position(0x02D3010E, 27.721006f, -24.671103f, 0.005000f, 0f, 0f, 0.998709f, 0.050804f), // 0x02D3010E [27.721006 -24.671103 0.005000] 0.050804 0.000000 0.000000 0.998709
+                        new Position(0x02D3010F, 32.411823f, -30.301567f, 0.005000f, 0f, 0f, 0.977071f, 0.212911f), // 0x02D3010F [32.411823 -30.301567 0.005000] 0.212911 0.000000 0.000000 0.977071
+                        new Position(0x02D30118, 37.262321f, -58.807224f, 0.005000f, 0f, 0f, 0.355590f, 0.934642f), // 0x02D30118 [37.262321 -58.807224 0.005000] 0.934642 0.000000 0.000000 0.355590
+                    });//Xarabydun Lifestone
                 }
 
                 return _arenaLocationStartingPositions;

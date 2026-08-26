@@ -70,7 +70,7 @@ namespace ACE.Server.Factories
             // mutate DamageMod / ElementalDamageBonus / WieldRequirements
             var mutationFilter = MutationCache.GetMutation(scriptName);
 
-            mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod);
+            mutationFilter.TryMutate(wo, profile.Tier, profile.LootQualityMod, GetHotDungeonQualityBias(profile));
 
             // mutate WeaponDefense
             mutationFilter = MutationCache.GetMutation("MissileWeapons.weapon_defense.txt");

@@ -1,8 +1,9 @@
-using System;
-
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Managers;
+
+using System;
 
 namespace ACE.Server.WorldObjects
 {
@@ -70,6 +71,41 @@ namespace ACE.Server.WorldObjects
                 case "Yellow Topaz":
                     resultMessage = TinkeringLotto_PlayDefenseImbueLottery(salvageWorkmanship, chanceMod);
                     break;
+                case "Agate":
+                case "Bloodstone":
+                case "Carnelian":
+                case "Lapis Lazuli":
+                case "Smokey Quartz":
+                case "Rose Quartz":
+                    //Agate - Focus
+                    //Bloodstone - Endurance
+                    //Carnelian - Strength
+                    //Lapis Lazuli - Willpower
+                    //Smokey Quartz - Coord
+                    //Rose Quartz - Quickness
+                    resultMessage = TinkeringLotto_PlayMinorImbueLottery(salvageType, salvageWorkmanship, chanceMod);
+                    break;
+                case "Ebony":
+                case "Porcelain":
+                case "Teak":
+                case "Silk":
+                    resultMessage = TinkeringLotto_PlayActivationRemovalLottery(salvageType, salvageWorkmanship, chanceMod);
+                    break;
+            /*
+
+Red Jade - Health Gain
+
+Ebony - Heritage to Gharu
+Porcelain - Sho
+Teak - Aluvian
+
+Hematite
+Moonstone - Increases items mana
+Pine - 
+
+
+Silk - Removes rank
+             */
 
                 default:
                     return "";
@@ -611,6 +647,192 @@ namespace ACE.Server.WorldObjects
                     if (roll < 0.15)
                     {
                         alBonus += rand.Next(3, 6);
+                        resultMsg = $"Jackpot! Improved Armor Level by {alBonus}";
+                    }
+                }
+
+                this.ArmorLevel += alBonus;
+                HandleTinkerLottoLog($"AL+{alBonus}");
+            }
+
+            //Roll for Creature Resist and Creature Slayer ratings            
+            if (this.GearCreatureResistType == 0)
+            {
+                roll = rand.NextDouble();
+                if (roll < 0.1)
+                {
+                    string gearCreatureResult = TinkeringLotto_ApplyGearCreatureResistMutation();
+                    if (!string.IsNullOrEmpty(gearCreatureResult))
+                        resultMsg = string.IsNullOrEmpty(resultMsg) ? gearCreatureResult : $"{resultMsg}\n{gearCreatureResult}";
+                }
+            }
+
+            if (this.GearCreatureSlayerType == 0)
+            {
+                roll = rand.NextDouble();
+                if (roll < 0.1)
+                {
+                    string gearCreatureResult = TinkeringLotto_ApplyGearCreatureSlayerMutation();
+                    if (!string.IsNullOrEmpty(gearCreatureResult))
+                        resultMsg = string.IsNullOrEmpty(resultMsg) ? gearCreatureResult : $"{resultMsg}\n{gearCreatureResult}";
+                }
+            }
+
+            return resultMsg;
+        }
+
+        private string TinkeringLotto_PlayMinorImbueLottery(string salvageType, int salvageWorkmanship, float chanceMod = 1.0f)
+        {
+            //Chance to increase mana pool
+            //Chance to decrease mana burn rate
+            //Chance to upgrade minor to a moderate
+
+            string resultMsg = "";
+
+            Random rand = new Random();
+            var roll = rand.NextDouble();
+
+            //Mana pool
+            if(roll > 0.6 && this.ItemMaxMana.HasValue)
+            {
+                var manaBonus = Convert.ToInt32(Math.Round(roll * 1000));
+                this.ItemMaxMana = this.ItemMaxMana.Value + manaBonus;
+                resultMsg = $"Increased maximum mana by {manaBonus}";
+                HandleTinkerLottoLog($"MaxMana+{manaBonus}");
+            }
+
+            //Mana burn rate
+            if(roll < 0.4 && this.ManaRate.HasValue && this.ManaRate.Value < 0)
+            {
+                var bonusSeconds = Convert.ToInt32(Math.Round(roll * 100));
+                var currSeconds = -1.0 / this.ManaRate.Value;
+                var newSeconds = currSeconds + bonusSeconds;
+                this.ManaRate = -1.0 / newSeconds;
+                resultMsg = $"Decreased mana burn rate by {bonusSeconds} seconds";
+                HandleTinkerLottoLog($"ManaRate+{bonusSeconds}");
+            }
+
+            //25% chance to upgrade
+            //5% chance to major
+            //95% chance to moderate
+            roll = rand.NextDouble();
+            if (roll < 0.25)
+            {
+                var isMajor = rand.NextDouble() < 0.05;
+                string successMsg = "";
+                var minorCantrips = this.MinorCantrips?.Keys;
+                switch(salvageType)
+                {
+                    //Agate - Focus
+                    //Bloodstone - Endurance
+                    //Carnelian - Strength
+                    //Lapis Lazuli - Willpower
+                    //Smokey Quartz - Coord
+                    //Rose Quartz - Quickness
+                    case "Agate":
+                        if(minorCantrips.Contains((int)SpellId.CANTRIPFOCUS1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPFOCUS1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPFOCUS2 : 2661, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Focus to {(isMajor ? "Major" : "Moderate")} Focus";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    case "Bloodstone":
+                        if (minorCantrips.Contains((int)SpellId.CANTRIPENDURANCE1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPENDURANCE1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPENDURANCE2 : 2660, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Endurance to {(isMajor ? "Major" : "Moderate")} Endurance";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    case "Carnelian":
+                        if (minorCantrips.Contains((int)SpellId.CANTRIPSTRENGTH1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPSTRENGTH1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPSTRENGTH2 : 2663, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Strength to {(isMajor ? "Major" : "Moderate")} Strength";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    case "Lapis Lazuli":
+                        if (minorCantrips.Contains((int)SpellId.CANTRIPWILLPOWER1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPWILLPOWER1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPWILLPOWER2 : 2664, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Willpower to {(isMajor ? "Major" : "Moderate")} Willpower";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    case "Smokey Quartz":
+                        if (minorCantrips.Contains((int)SpellId.CANTRIPCOORDINATION1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPCOORDINATION1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPCOORDINATION2 : 2659, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Coordination to {(isMajor ? "Major" : "Moderate")} Coordination";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    case "Rose Quartz":
+                        if (minorCantrips.Contains((int)SpellId.CANTRIPQUICKNESS1))
+                        {
+                            this.Biota.TryRemoveKnownSpell((int)SpellId.CANTRIPQUICKNESS1, this.BiotaDatabaseLock);
+                            this.Biota.GetOrAddKnownSpell(isMajor ? (int)SpellId.CANTRIPQUICKNESS2 : 2662, this.BiotaDatabaseLock, out _);
+                            successMsg = $"Upgraded spell Minor Quickness to {(isMajor ? "Major" : "Moderate")} Quickness";
+                            resultMsg = string.IsNullOrEmpty(resultMsg) ? successMsg : $"{resultMsg}\n{successMsg}";
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            //Roll for Creature Resist and Creature Slayer ratings            
+            if (this.GearCreatureResistType == 0)
+            {
+                roll = rand.NextDouble();
+                if (roll < 0.1)
+                {
+                    string gearCreatureResult = TinkeringLotto_ApplyGearCreatureResistMutation();
+                    if (!string.IsNullOrEmpty(gearCreatureResult))
+                        resultMsg = string.IsNullOrEmpty(resultMsg) ? gearCreatureResult : $"{resultMsg}\n{gearCreatureResult}";
+                }
+            }
+
+            if (this.GearCreatureSlayerType == 0)
+            {
+                roll = rand.NextDouble();
+                if (roll < 0.1)
+                {
+                    string gearCreatureResult = TinkeringLotto_ApplyGearCreatureSlayerMutation();
+                    if (!string.IsNullOrEmpty(gearCreatureResult))
+                        resultMsg = string.IsNullOrEmpty(resultMsg) ? gearCreatureResult : $"{resultMsg}\n{gearCreatureResult}";
+                }
+            }
+
+            return resultMsg;
+        }
+        
+        private string TinkeringLotto_PlayActivationRemovalLottery(string salvageType, int salvageWorkmanship, float chanceMod = 1.0f)
+        {
+            string resultMsg = "";
+
+            Random rand = new Random();
+            var roll = rand.NextDouble();
+            var alBonus = 0;
+
+            if (roll < 0.5 && this.ArmorLevel > 0)
+            {
+                alBonus = rand.Next(10, 21);
+                resultMsg = $"Improved Armor Level by {alBonus}";
+
+                if (salvageWorkmanship == 10 && this.Workmanship <= 6)
+                {
+                    roll = rand.NextDouble();
+                    if (roll < 0.15)
+                    {
+                        alBonus += rand.Next(10, 21);
                         resultMsg = $"Jackpot! Improved Armor Level by {alBonus}";
                     }
                 }

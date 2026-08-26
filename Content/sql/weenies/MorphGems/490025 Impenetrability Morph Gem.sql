@@ -1,7 +1,7 @@
 DELETE FROM `weenie` WHERE `class_Id` = 490025;
 
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
-VALUES (490025, 'ace490025-Impenatrabilitymorphgem', 38, '2022-01-29 01:15:03') /* Gem */;
+VALUES (490025, 'ace490025-Impenetrabilitymorphgem', 38, '2022-01-29 01:15:03') /* Gem */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (490025,   1,       2048) /* ItemType - Gem */
@@ -23,8 +23,8 @@ VALUES (490025,   1, False) /* Stuck */
      , (490025,  69, False) /* IsSellable */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
-VALUES (490025,   1, 'Impenatrability Morph Gem') /* Name */
-     , (490025,  14, 'Applying this gem to loot generated armor will add an additional spell, either Minor Impenatrability, Major Impenatrability, Epic Impenatrability or Legendary Impenatrability.') /* Use */;
+VALUES (490025,   1, 'Impenetrability Morph Gem') /* Name */
+     , (490025,  14, 'Applying this gem to loot generated armor will add either Minor Impenetrability or Major Impenetrability. This gem cannot be used on an item that already has an Impenetrability cantrip.') /* Use */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (490025,   1, 0x02000179) /* Setup */

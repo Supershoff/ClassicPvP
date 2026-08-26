@@ -524,6 +524,69 @@ namespace ACE.Server.Managers
             catch { return datLevel; }
         }
 
+        // ── Catch-up XP boost ────────────────────────────────────────────────────
+        //
+        // Characters whose lifetime total XP sits well below the current season cap earn
+        // boosted XP so a late start (or a fresh reroll) is not a season-ending handicap.
+        // The boost scales linearly with how far behind the cap the character is:
+        //
+        //   totalXp = 0                     → catchup_xp_max_multiplier (default 5.0×)
+        //   totalXp → threshold × xpCap     → catchup_xp_min_multiplier (default 2.0×)
+        //   totalXp ≥ threshold × xpCap     → 1.0× (no boost)
+        //
+        // The step down from the minimum multiplier to 1.0× at the threshold is intentional:
+        // the boost is a catch-up mechanic for players who are behind, not a gentle taper for
+        // players who have already caught up.
+
+        /// <summary>
+        /// Returns the catch-up XP multiplier for a character whose lifetime total XP is
+        /// <paramref name="totalXp"/>.  Returns 1.0 (no boost) when the feature is disabled,
+        /// when no season cap is active, or when the character is at or above
+        /// <c>catchup_xp_threshold</c> of the cap.
+        /// </summary>
+        public static double GetCatchUpXpMultiplier(long totalXp)
+        {
+            if (!PropertyManager.GetBool("catchup_xp_enabled").Item)
+                return 1.0;
+
+            var xpCap = GetCurrentXpCap();
+            if (xpCap <= 0)
+                return 1.0;
+
+            var threshold = Math.Min(1.0, PropertyManager.GetDouble("catchup_xp_threshold").Item);
+            if (threshold <= 0.0)
+                return 1.0;
+
+            var progress = Math.Max(0.0, (double)totalXp / xpCap);
+            if (progress >= threshold)
+                return 1.0;
+
+            var maxMultiplier = PropertyManager.GetDouble("catchup_xp_max_multiplier").Item;
+            var minMultiplier = PropertyManager.GetDouble("catchup_xp_min_multiplier").Item;
+
+            // Tolerate a swapped configuration rather than inverting the ramp.
+            if (maxMultiplier < minMultiplier)
+                (maxMultiplier, minMultiplier) = (minMultiplier, maxMultiplier);
+
+            // Linear ramp across the boosted band: 0 % of the threshold → max, 100 % → min.
+            var bandProgress = progress / threshold;
+            var multiplier   = maxMultiplier - bandProgress * (maxMultiplier - minMultiplier);
+
+            return Math.Max(1.0, multiplier);
+        }
+
+        /// <summary>
+        /// Returns the fraction (0.0–1.0+) of the current season XP cap that
+        /// <paramref name="totalXp"/> represents, or -1 when no cap is active.
+        /// Used by status displays alongside <see cref="GetCatchUpXpMultiplier"/>.
+        /// </summary>
+        public static double GetSeasonCapProgress(long totalXp)
+        {
+            var xpCap = GetCurrentXpCap();
+            if (xpCap <= 0) return -1.0;
+            return Math.Max(0.0, (double)totalXp / xpCap);
+        }
+
         /// <summary>
         /// Returns the time remaining until the cap next advances (next UTC midnight).
         /// Returns <see cref="TimeSpan.Zero"/> if the season has ended or has not started.

@@ -12,7 +12,7 @@ namespace ACE.Server.Entity.Mutations
 
         public List<MutationOutcome> Outcomes = new List<MutationOutcome>();
 
-        public bool TryMutate(WorldObject wo, int tier, double rng, float qualityMod = 0.0f)
+        public bool TryMutate(WorldObject wo, int tier, double rng, float qualityMod = 0.0f, float qualityBias = 0.0f)
         {
             // if at least 6 tiers are defined,
             // if we are rolling for a higher tier,
@@ -35,7 +35,7 @@ namespace ACE.Server.Entity.Mutations
 
             var mutated = false;
             foreach (var outcome in Outcomes)
-                mutated |= outcome.TryMutate(wo, rng);
+                mutated |= outcome.TryMutate(wo, rng, qualityBias);
 
             return mutated;
         }

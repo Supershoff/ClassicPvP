@@ -6,6 +6,7 @@ using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Animation;
+using ACE.Server.Physics.Extensions;
 
 namespace ACE.Server.WorldObjects
 {
@@ -103,7 +104,27 @@ namespace ACE.Server.WorldObjects
 
                 if (AttackTarget != null)
                 {
-                    var projectile = LaunchProjectile(launcher, ammo, AttackTarget, origin, orientation, velocity);
+                    var launchOrigin = origin;
+                    var launchOrientation = orientation;
+                    var launchVelocity = velocity;
+
+                    // MISSILE FIX 1: see Player_Missile.LaunchMissile. The firing solution above was
+                    // calculated before the aim animation played; re-solve at the instant the projectile
+                    // actually spawns. aimLevel / localOrigin are reused so the spawn offset stays
+                    // consistent with the animation the client already rendered.
+                    if (ACE.Server.Managers.PropertyManager.GetBool("missile_fresh_solution").Item)
+                    {
+                        var freshVelocity = CalculateProjectileVelocity(localOrigin, AttackTarget, projectileSpeed, out var freshOrigin, out var freshOrientation);
+
+                        if (freshVelocity != Vector3.Zero && freshVelocity.IsValid())
+                        {
+                            launchOrigin = freshOrigin;
+                            launchOrientation = freshOrientation;
+                            launchVelocity = freshVelocity;
+                        }
+                    }
+
+                    var projectile = LaunchProjectile(launcher, ammo, AttackTarget, launchOrigin, launchOrientation, launchVelocity);
                     UpdateAmmoAfterLaunch(ammo);
                 }
 

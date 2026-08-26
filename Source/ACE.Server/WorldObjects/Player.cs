@@ -728,7 +728,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (((PKLogoutActive || isHardcoreLogout) && !forceImmediate) || PkLogoutState != LogoutState.Pending)
+            if (((PKLogoutActive || isHardcoreLogout || HotDungeonLogoutActive) && !forceImmediate) || PkLogoutState != LogoutState.Pending)
             {
                 return HandlePKLogout();
             }
@@ -767,7 +767,12 @@ namespace ACE.Server.WorldObjects
             PkLogoutState = LogoutState.InProgress;
             PKLogout = true;
 
+            // PK battles use pk_timer; a logout triggered purely by standing in a Hot Dungeon
+            // (not a PK battle) uses its own configurable duration.
             var timer = PropertyManager.GetLong("pk_timer").Item;
+            if (!PKLogoutActive && HotDungeonLogoutActive)
+                timer = PropertyManager.GetLong("hot_dungeon_logout_timer_seconds").Item;
+
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You will logout in {timer} seconds...", ChatMessageType.Broadcast));
 
             if (Teleporting && ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.CustomDM)

@@ -92,14 +92,14 @@ namespace ACE.Server.Managers
             TimeSpan.FromMinutes(PropertyManager.GetLong("ah_phase2_minutes", 30).Item);
 
         /// <summary>
-        /// How long defenders must hold the Bind Stone area (2+ defenders, 0 attackers within 50m) before
+        /// How long defenders must hold the meeting hall (2+ defenders, 0 non-defenders present) before
         /// Phase 2 auto-resolves as a repelled attack. Configurable via "ah_phase2_repel_minutes" (default 10).
         /// </summary>
         public static double Phase2RepelSeconds =>
             PropertyManager.GetLong("ah_phase2_repel_minutes", 10).Item * 60.0;
 
         /// <summary>
-        /// How long a hometown landblock is held loaded once Phase 2 starts. Derived from
+        /// How long the meeting hall landblock is held loaded once Phase 2 starts. Derived from
         /// Phase2Duration so raising the phase length can't leave the landblock unloading
         /// underneath a live conflict; the margin covers the death sequence and payout.
         /// </summary>
@@ -556,7 +556,7 @@ namespace ACE.Server.Managers
             if (evt != null)
                 DatabaseManager.Log.UpdateAllegianceHometownEvent(evt);
 
-            GlobalBroadcast($"{attackerName}'s assault on {townName} has breached Phase 2. Will they claim victory over {defenderName}?");
+            GlobalBroadcast($"{attackerName}'s assault on {townName} has breached Phase 2 — the Bind Stone has withdrawn into the {townName} Meeting Hall. Will they claim victory over {defenderName}?");
         }
 
         /// <summary>Called when bindstone HP reaches 0 — attacker wins.</summary>
@@ -756,46 +756,43 @@ namespace ACE.Server.Managers
             var entry = AllegianceHometownRegistry.GetById(townId);
             if (entry == null) return;
 
-            // entry.LandblockId is the 16-bit landblock value; build the LandblockId from the
-            // bindstone Position so the landblock resolves correctly (a raw 16-bit value would
-            // be interpreted as landblock 0x0000).
-            var mainLb = LandblockManager.GetLandblock(entry.BindstonePosition.LandblockId, false);
-            if (mainLb == null) return;
+            // Phase 2 resolves inside the meeting hall, so eligibility is simply "present in the hall".
+            // Build the LandblockId from the Phase 2 Position so the landblock resolves correctly
+            // (a raw 16-bit value would be interpreted as landblock 0x0000).
+            var hallLb = LandblockManager.GetLandblock(entry.Phase2Position.LandblockId, false);
+            if (hallLb == null) return;
 
-            // Collect all landblocks in the smite zone (main + adjacent)
-            var allLbs = new System.Collections.Generic.List<Entity.Landblock> { mainLb };
-            foreach (var adjId in LandblockManager.GetAdjacentIDs(mainLb))
+            // Collect winner players present in the meeting hall
+            var winnerPlayers = new System.Collections.Generic.List<Player>();
+
+            foreach (var p in hallLb.GetPlayers())
             {
-                var adjLb = LandblockManager.GetLandblock(adjId, false);
-                if (adjLb != null) allLbs.Add(adjLb);
+                if (!p.IsPK) continue;
+                var monarchId = AllegianceManager.GetVerifiedMonarchId(p) ?? p.Guid.Full;
+                if (monarchId == winnerMonarchId)
+                    winnerPlayers.Add(p);
             }
 
-            // Collect winner players within 100m of the bindstone (main + adjacent landblocks)
-            var winnerPlayers = new System.Collections.Generic.List<Player>();
-            var bindstonePos  = entry.BindstonePosition;
-
-            foreach (var lb in allLbs)
+            // Smite losing allegiance members present in the meeting hall.
+            // Each smite runs the victim's full death handling (broadcasts, corpse, PK bookkeeping),
+            // so it is isolated: a throw on one player must not skip the remaining smites or abort the
+            // winners' payout below, and must never bubble up to ResolvePhase2 — that catch force-ends
+            // the conflict, turning a won siege into an inconclusive one.
+            if (loserMonarchId.HasValue)
             {
-                foreach (var p in lb.GetPlayers())
+                foreach (var p in hallLb.GetPlayers())
                 {
                     if (!p.IsPK) continue;
                     var monarchId = AllegianceManager.GetVerifiedMonarchId(p) ?? p.Guid.Full;
-                    if (monarchId == winnerMonarchId && p.Location.DistanceTo(bindstonePos) <= 100f)
-                        winnerPlayers.Add(p);
-                }
-            }
+                    if (monarchId != loserMonarchId.Value) continue;
 
-            // Smite losing allegiance members within 100m of the bindstone
-            if (loserMonarchId.HasValue)
-            {
-                foreach (var lb in allLbs)
-                {
-                    foreach (var p in lb.GetPlayers())
+                    try
                     {
-                        if (!p.IsPK) continue;
-                        var monarchId = AllegianceManager.GetVerifiedMonarchId(p) ?? p.Guid.Full;
-                        if (monarchId == loserMonarchId.Value && p.Location.DistanceTo(bindstonePos) <= 100f)
-                            p.Smite(p);
+                        p.Smite(p);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[AllegianceHometown] Exception smiting {p.Name} ({p.Guid}) on town {townId} resolution; continuing. Ex: {ex}");
                     }
                 }
             }
@@ -816,38 +813,48 @@ namespace ACE.Server.Managers
 
             foreach (var winner in winnerPlayers)
             {
-                // PK Trophies (stackable)
-                GiveStacked(winner, CustomWeenieId.PkTrophy, perTrophies);
-
-                // MMDs (stackable)
-                GiveStacked(winner, 20630u, perMmds);
-
-                // Phials of Bloody Tears
-                for (int k = 0; k < phials; k++)
-                    GiveSingle(winner, CustomWeenieId.PhialOfBloodyTears);
-
-                // Darkbeat Keys
-                for (int k = 0; k < darkbeatKeys; k++)
-                    GiveSingle(winner, CustomWeenieId.DarkbeatKey);
-
-                // Bonus XP toward next level (fixed reward; GrantXP already bypasses the season xp_modifier)
-                var level = winner.Level ?? 1;
-                var xpBand = (long)winner.GetXPBetweenLevels(level, level + 1);
-                var bonusXp = (long)Math.Round(xpBand * xpPct);
-                if (bonusXp > 0)
-                    winner.GrantXP(bonusXp, XpType.PvP, ACE.Entity.Enum.ShareType.None, "hometown capture reward");
-
-                var extras = new System.Collections.Generic.List<string>
+                // Isolated per winner for the same reason as the smite loop above: one player failing to
+                // be paid (a full inventory, a session that dropped mid-resolution) must not cost every
+                // other winner their reward, nor bubble up and force-end an already-decided conflict.
+                try
                 {
-                    $"{perTrophies} PK Trophy/Trophies",
-                    $"{perMmds} MMD(s)"
-                };
-                if (phials > 0)       extras.Add($"{phials} Phial(s) of Bloody Tears");
-                if (darkbeatKeys > 0) extras.Add($"{darkbeatKeys} Darkbeat Key(s)");
+                    // PK Trophies (stackable)
+                    GiveStacked(winner, CustomWeenieId.PkTrophy, perTrophies);
 
-                winner.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"[Hometown] You received {string.Join(", ", extras)} for your service!",
-                    ChatMessageType.Magic));
+                    // MMDs (stackable)
+                    GiveStacked(winner, 20630u, perMmds);
+
+                    // Phials of Bloody Tears
+                    for (int k = 0; k < phials; k++)
+                        GiveSingle(winner, CustomWeenieId.PhialOfBloodyTears);
+
+                    // Darkbeat Keys
+                    for (int k = 0; k < darkbeatKeys; k++)
+                        GiveSingle(winner, CustomWeenieId.DarkbeatKey);
+
+                    // Bonus XP toward next level (fixed reward; GrantXP already bypasses the season xp_modifier)
+                    var level = winner.Level ?? 1;
+                    var xpBand = (long)winner.GetXPBetweenLevels(level, level + 1);
+                    var bonusXp = (long)Math.Round(xpBand * xpPct);
+                    if (bonusXp > 0)
+                        winner.GrantXP(bonusXp, XpType.PvP, ACE.Entity.Enum.ShareType.None, "hometown capture reward");
+
+                    var extras = new System.Collections.Generic.List<string>
+                    {
+                        $"{perTrophies} PK Trophy/Trophies",
+                        $"{perMmds} MMD(s)"
+                    };
+                    if (phials > 0)       extras.Add($"{phials} Phial(s) of Bloody Tears");
+                    if (darkbeatKeys > 0) extras.Add($"{darkbeatKeys} Darkbeat Key(s)");
+
+                    winner.Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"[Hometown] You received {string.Join(", ", extras)} for your service!",
+                        ChatMessageType.Magic));
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[AllegianceHometown] Exception rewarding {winner.Name} ({winner.Guid}) on town {townId} resolution; continuing. Ex: {ex}");
+                }
             }
         }
 
@@ -883,6 +890,10 @@ namespace ACE.Server.Managers
         /// One-time award of PK Trophies to attacking-allegiance members near the Bind Stone at the moment
         /// Phase 2 begins. Default 5 each, configurable via "ah_phase2_start_trophies". Scans the town
         /// landblock and its neighbours (bind stones can sit on a boundary) within 100m of the stone.
+        ///
+        /// This one stays outdoors and distance-based on purpose: it fires the instant Phase 1 completes,
+        /// when the attackers are still stacked on the outdoor bind stone and nobody has entered the
+        /// meeting hall yet. Switching it to hall presence would award nothing.
         /// </summary>
         public static void AwardPhase2StartTrophies(byte townId)
         {
@@ -1152,6 +1163,21 @@ namespace ACE.Server.Managers
                 return new Dictionary<uint, ACE.Database.Models.Log.AllegianceHometownBlacklist>(_blacklistEntries);
         }
 
+        /// <summary>
+        /// True when the given landblock is a town meeting hall whose Phase 2 is currently running.
+        /// Portal.CheckUseRequirements uses this to let PK-tagged players through the meeting hall
+        /// portals during a siege, so nobody can be locked out of Phase 2 by being repeatedly tagged.
+        /// Outside Phase 2 the normal PK timer applies, so the halls are not a general PvP escape hatch.
+        /// </summary>
+        public static bool IsPhase2HallOpen(uint landblockId)
+        {
+            var entry = AllegianceHometownRegistry.GetByHallLandblock(landblockId);
+            if (entry == null) return false;
+
+            lock (_lock)
+                return _towns.TryGetValue(entry.TownId, out var t) && t.ConflictPhase == 2;
+        }
+
         public static void RegisterPhase2CloakedBindstone(byte townId, WorldObjects.Bindstone bindstone)
         {
             lock (_lock)
@@ -1179,10 +1205,13 @@ namespace ACE.Server.Managers
             // Send CreateObject so all nearby clients who lack it in their tracking get it back
             bs.EnqueueBroadcast(false, new GameMessageCreateObject(bs));
 
-            // Lift the Phase 2 permaload so the landblock can unload normally when empty again.
-            // Only the timed permaload is dropped — a landblock the config preloads permanently
-            // stays pinned.
-            bs.CurrentLandblock?.ClearTimedPermaload();
+            // Lift the Phase 2 permaload so the meeting hall can unload normally when empty again.
+            // The permaload is taken on the hall landblock (where the proxy lives), not on the town
+            // landblock the real bind stone sits in. Only the timed permaload is dropped — a landblock
+            // the config preloads permanently stays pinned.
+            var entry = AllegianceHometownRegistry.GetById(townId);
+            if (entry != null)
+                LandblockManager.GetLandblock(entry.Phase2Position.LandblockId, false)?.ClearTimedPermaload();
         }
 
         // -----------------------------------------------------------------------

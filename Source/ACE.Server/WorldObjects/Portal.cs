@@ -161,7 +161,13 @@ namespace ACE.Server.WorldObjects
             //    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouHaveBeenInPKBattleTooRecently));
             //}
 
-            if (player.PKTimerActive && !PortalIgnoresPkAttackTimer && ConfigManager.Config.Server.WorldRuleset != Common.Ruleset.CustomDM)
+            // Allegiance Hometown: while a town's Phase 2 is running, its meeting hall portal ignores the
+            // PK attack timer. Phase 2 is fought inside the hall, and the portal is the only way in, so
+            // enforcing the timer here would let either side lock opponents out of the fight entirely by
+            // tagging them on repeat. The exemption is scoped to that hall and to the duration of Phase 2,
+            // so the meeting halls never become a general escape hatch from PvP.
+            if (player.PKTimerActive && !PortalIgnoresPkAttackTimer && ConfigManager.Config.Server.WorldRuleset != Common.Ruleset.CustomDM
+                && !AllegianceHometownManager.IsPhase2HallOpen(Destination?.LandblockId.Landblock ?? 0))
             {
                 return silent ? new ActivationResult(false) : new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouHaveBeenInPKBattleTooRecently));
             }
