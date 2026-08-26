@@ -1063,7 +1063,13 @@ namespace ACE.Server.WorldObjects
                     pet.P_PetDevice.Pet = null;
             }
 
-            if (this is Vendor vendor)
+            // A mule vendor's sale dictionaries hold borrowed references into the owning
+            // player's persistent mule storage containers (see Player_Mule.cs), not inventory
+            // this shell owns -- cascading into them here would destroy live persistent items
+            // out from under their real container. Skip the cascade for any vendor with
+            // MuleOwnerId set, regardless of which path reached Destroy() (dismiss, a failed
+            // spawn, logout, landblock departure/unload, or any future/missed caller).
+            if (this is Vendor vendor && !vendor.MuleOwnerId.HasValue)
             {
                 foreach (var wo in vendor.DefaultItemsForSale.Values)
                     wo.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);

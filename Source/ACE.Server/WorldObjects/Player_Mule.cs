@@ -71,25 +71,40 @@ namespace ACE.Server.WorldObjects
         private const ushort MarketplaceLandblock = 0x016C;
 
         /// <summary>
-        /// Destroys the currently active mule NPC shell, if any. Always clears its sale
-        /// dictionaries first -- WorldObject.Destroy() cascade-destroys everything in a Vendor's
-        /// DefaultItemsForSale/UniqueItemsForSale, and those dictionaries reference the same
-        /// live objects backing the player's persistent storage. Never destroy a mule NPC any
-        /// other way.
+        /// Destroys the currently active mule NPC shell, if any, via TeardownMuleShell.
         /// </summary>
         public void DespawnMule()
         {
             if (ActiveMule != null)
-            {
-                ActiveMule.DefaultItemsForSale.Clear();
-                ActiveMule.UniqueItemsForSale.Clear();
-                ActiveMule.Destroy();
-            }
+                TeardownMuleShell(ActiveMule);
 
             // ActiveMuleContainers is deliberately NOT cleared here -- see LoadMuleContainerChain.
             // The search filter now lives on the vendor (MuleSearchRegex), which is about to be
             // destroyed above, so there's nothing else to clear for it here.
             ActiveMule = null;
+        }
+
+        /// <summary>
+        /// The single entry point for destroying a mule NPC shell -- clears its sale
+        /// dictionaries first, then destroys it. Every path that gets rid of a mule shell
+        /// (owner dismiss, a failed EnterWorld() during spawn, owner logout, owner landblock
+        /// departure, landblock unload, server shutdown) must go through this rather than
+        /// calling vendor.Destroy() directly.
+        /// <para/>
+        /// Clearing first is defense in depth, not the only thing preventing data loss:
+        /// WorldObject.Destroy() itself skips cascading into a Vendor's sale dictionaries
+        /// whenever MuleOwnerId is set, precisely because those dictionaries hold borrowed
+        /// references into the owner's persistent mule storage containers, never inventory the
+        /// shell itself owns. A caller that destroys a mule shell without going through this
+        /// method still can't delete storage -- but every known disposal path should use this
+        /// method anyway, both to keep the shell's own state consistent and so there's exactly
+        /// one place this behavior is implemented and tested.
+        /// </summary>
+        private static void TeardownMuleShell(Vendor vendor)
+        {
+            vendor.DefaultItemsForSale.Clear();
+            vendor.UniqueItemsForSale.Clear();
+            vendor.Destroy();
         }
 
         /// <summary>
@@ -305,8 +320,11 @@ namespace ACE.Server.WorldObjects
 
             if (!vendor.EnterWorld())
             {
+                log.Error($"[MULE] Account {Account.AccountId} / {Name} (0x{Guid}): mule vendor 0x{vendor.Guid} failed EnterWorld() at {vendor.Location}. " +
+                    $"Tearing down the shell without touching storage. Containers: {string.Join(", ", containers.Select(c => $"0x{c.Guid}"))}");
+
                 SendTransientError("Couldn't summon your mule here.");
-                vendor.Destroy();
+                TeardownMuleShell(vendor);
                 return;
             }
 
